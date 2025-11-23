@@ -14,9 +14,26 @@ const corsOptions = {
       'http://localhost:3000',
       'http://localhost:5173', // Vite default port
       'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
     ].filter(Boolean); // Remove undefined values
-    
+
+    // In development, allow all local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    if (process.env.NODE_ENV !== 'production') {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow localhost and local network IPs
+      const isLocalNetwork =
+        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
+          origin
+        );
+
+      if (allowedOrigins.includes(origin) || isLocalNetwork) {
+        return callback(null, true);
+      }
+    }
+
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -28,7 +45,7 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Authorization'],
-  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
+  optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 
 // Middleware
@@ -51,6 +68,7 @@ app.use('/api/student', require('./routes/student'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/schedule', require('./routes/schedule'));
 app.use('/api/materials', require('./routes/materials'));
+app.use('/api/courses', require('./routes/courses'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -58,7 +76,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal Server Error',
-    error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    error: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 });
 
@@ -66,9 +84,8 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Route not found'
+    message: 'Route not found',
   });
 });
 
 module.exports = app;
-
