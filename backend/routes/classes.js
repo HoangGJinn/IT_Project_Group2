@@ -9,10 +9,32 @@ router.post('/', authenticate, authorize('TEACHER', 'ADMIN'), classController.cr
 router.put('/:id', authenticate, authorize('TEACHER', 'ADMIN'), classController.updateClass);
 router.delete('/:id', authenticate, authorize('TEACHER', 'ADMIN'), classController.deleteClass);
 
+// Search student (for adding to class) - must be before /:id routes
+router.get(
+  '/students/search',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  classController.searchStudent
+);
+
 // Student management
-router.get('/:id/students', authenticate, authorize('TEACHER', 'ADMIN'), classController.getStudents);
-router.post('/:id/students', authenticate, authorize('TEACHER', 'ADMIN'), classController.addStudent);
-router.delete('/:id/students/:studentId', authenticate, authorize('TEACHER', 'ADMIN'), classController.removeStudent);
+router.get(
+  '/:id/students',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  classController.getStudents
+);
+router.post(
+  '/:id/students',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  classController.addStudent
+);
+router.delete(
+  '/:id/students/:studentId',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  classController.removeStudent
+);
 
 module.exports = router;
-

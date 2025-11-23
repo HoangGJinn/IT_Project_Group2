@@ -1,61 +1,76 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { FaUser, FaCalendar, FaClock, FaMapMarkerAlt, FaChartLine } from 'react-icons/fa'
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { FaUser, FaCalendar, FaClock, FaMapMarkerAlt, FaChartLine } from 'react-icons/fa';
+import api from '../../utils/api';
 
 function StudentClassDetail() {
-  const { id } = useParams()
-  const [activeTab, setActiveTab] = useState('info')
+  const { id } = useParams();
+  const [activeTab, setActiveTab] = useState('info');
+  const [classInfo, setClassInfo] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data - sẽ thay bằng API call sau
-  const classInfo = {
-    id: id,
-    name: 'Lập Trình Web',
-    code: 'WEB001',
-    teacher: 'Nguyễn Văn A',
-    day: 'Thứ 2, Thứ 5',
-    period: '7->10',
-    room: 'A112',
-    totalSessions: 45,
-    attendedSessions: 43,
-    attendanceRate: '95.6%',
+  useEffect(() => {
+    fetchClassDetail();
+  }, [id]);
+
+  const fetchClassDetail = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/student/classes/${id}`);
+      if (response.data.success) {
+        const data = response.data.data;
+        setClassInfo({
+          id: data.class_id,
+          name: data.name || data.course?.name,
+          code: data.class_code,
+          teacher: data.teacher?.user?.full_name || 'Chưa có',
+          day: data.schedule_days || 'Chưa có',
+          period: data.schedule_periods || 'Chưa có',
+          room: data.room || 'Chưa có',
+          totalSessions: data.attendance_stats?.total_sessions || 0,
+          attendedSessions: data.attendance_stats?.attended_sessions || 0,
+          attendanceRate: data.attendance_stats?.attendance_rate || '0%',
+          description: data.course?.description || 'Chưa có mô tả',
+        });
+        setSessions(data.sessions || []);
+        // Materials would come from a separate endpoint if available
+        setMaterials([]);
+      }
+    } catch (error) {
+      console.error('Fetch class detail error:', error);
+      setError(error.response?.data?.message || 'Không thể tải thông tin lớp học');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600">Đang tải...</p>
+      </div>
+    );
   }
 
-  const sessions = [
-    {
-      id: 1,
-      session: 'Buổi 15',
-      date: '2024-11-20',
-      status: 'attended',
-      topic: 'React Hooks và State Management',
-    },
-    {
-      id: 2,
-      session: 'Buổi 14',
-      date: '2024-11-18',
-      status: 'attended',
-      topic: 'React Components',
-    },
-    {
-      id: 3,
-      session: 'Buổi 13',
-      date: '2024-11-15',
-      status: 'attended',
-      topic: 'JavaScript ES6+',
-    },
-    {
-      id: 4,
-      session: 'Buổi 12',
-      date: '2024-11-13',
-      status: 'absent',
-      topic: 'DOM Manipulation',
-    },
-  ]
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600">{error}</p>
+      </div>
+    );
+  }
 
-  const materials = [
-    { id: 1, name: 'Bài giảng tuần 1.pdf', type: 'pdf', size: '2.5 MB' },
-    { id: 2, name: 'Lab 1 - HTML Basics.docx', type: 'docx', size: '1.2 MB' },
-    { id: 3, name: 'Video bài giảng tuần 1.mp4', type: 'video', size: '150 MB' },
-  ]
+  if (!classInfo) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600">Không tìm thấy lớp học</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -160,9 +175,7 @@ function StudentClassDetail() {
               <div className="space-y-3">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-600 mb-1">Mô tả môn học</p>
-                  <p className="text-gray-800">
-                    Môn học cung cấp kiến thức về lập trình web hiện đại, bao gồm HTML, CSS, JavaScript và các framework phổ biến.
-                  </p>
+                  <p className="text-gray-800">{classInfo.description}</p>
                 </div>
               </div>
             </div>
@@ -172,43 +185,58 @@ function StudentClassDetail() {
 
       {activeTab === 'sessions' && (
         <div className="space-y-4">
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`bg-white rounded-lg shadow-md p-6 border-l-4 ${
-                session.status === 'attended' ? 'border-green-500' : 'border-red-500'
-              }`}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                    {session.session}
-                  </h3>
-                  <p className="text-gray-600 mb-1">
-                    <span className="font-semibold">Ngày:</span>{' '}
-                    {new Date(session.date).toLocaleDateString('vi-VN', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </p>
-                  <p className="text-gray-600">
-                    <span className="font-semibold">Chủ đề:</span> {session.topic}
-                  </p>
-                </div>
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    session.status === 'attended'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {session.status === 'attended' ? 'Đã tham gia' : 'Vắng mặt'}
-                </span>
-              </div>
+          {sessions.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-600">Chưa có buổi học nào</p>
             </div>
-          ))}
+          ) : (
+            sessions.map((session, index) => {
+              // Check if student attended this session
+              // This would need to be fetched from attendance records
+              // For now, we'll show the session info
+              return (
+                <div
+                  key={session.session_id || index}
+                  className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Buổi {index + 1}</h3>
+                      <p className="text-gray-600 mb-1">
+                        <span className="font-semibold">Ngày:</span>{' '}
+                        {new Date(session.date).toLocaleDateString('vi-VN', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </p>
+                      {session.topic && (
+                        <p className="text-gray-600">
+                          <span className="font-semibold">Chủ đề:</span> {session.topic}
+                        </p>
+                      )}
+                      {session.room && (
+                        <p className="text-gray-600">
+                          <span className="font-semibold">Phòng:</span> {session.room}
+                        </p>
+                      )}
+                      <p className="text-gray-600">
+                        <span className="font-semibold">Trạng thái:</span>{' '}
+                        {session.status === 'FINISHED'
+                          ? 'Đã kết thúc'
+                          : session.status === 'ONGOING'
+                            ? 'Đang diễn ra'
+                            : session.status === 'SCHEDULED'
+                              ? 'Đã lên lịch'
+                              : session.status}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
 
@@ -216,7 +244,7 @@ function StudentClassDetail() {
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold mb-4">Tài Liệu Học Tập</h2>
           <div className="space-y-3">
-            {materials.map((material) => (
+            {materials.map(material => (
               <div
                 key={material.id}
                 className="flex items-center justify-between p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition cursor-pointer"
@@ -239,8 +267,7 @@ function StudentClassDetail() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default StudentClassDetail
-
+export default StudentClassDetail;

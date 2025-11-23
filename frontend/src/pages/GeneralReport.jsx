@@ -1,26 +1,125 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react';
+import api from '../utils/api';
 
 function GeneralReport() {
-  const [selectedYear, setSelectedYear] = useState('')
-  const [selectedSemester, setSelectedSemester] = useState('')
-  const [selectedSubject, setSelectedSubject] = useState('')
+  const [selectedYear, setSelectedYear] = useState('');
+  const [selectedSemester, setSelectedSemester] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [attendanceData, setAttendanceData] = useState({
+    onTime: 0,
+    late: 0,
+    absent: 0,
+  });
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [courses, setCourses] = useState([]);
 
-  // Mock data - sẽ thay bằng API call sau
-  const attendanceData = {
-    onTime: 85,
-    late: 10,
-    absent: 5,
-  }
+  useEffect(() => {
+    fetchCourses();
+  }, []);
 
-  const students = [
-    {
-      id: 1,
-      name: 'Nguyễn Văn A',
-      studentId: '23110987',
-      totalSessions: '45/45',
-      attendanceRate: '100%',
-    },
-  ]
+  useEffect(() => {
+    if (selectedYear && selectedSemester) {
+      fetchReport();
+    }
+  }, [selectedYear, selectedSemester, selectedSubject]);
+
+  const fetchCourses = async () => {
+    try {
+      const response = await api.get('/courses');
+      if (response.data.success) {
+        setCourses(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Fetch courses error:', error);
+    }
+  };
+
+  const fetchReport = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        school_year: selectedYear,
+        semester: selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : 'HK3',
+      });
+
+      if (selectedSubject) {
+        params.append('course_id', selectedSubject);
+      }
+
+      const response = await api.get(`/reports/attendance?${params.toString()}`);
+
+      if (response.data.success) {
+        const data = response.data.data;
+        setAttendanceData({
+          onTime: data.overview.on_time || 0,
+          late: data.overview.late || 0,
+          absent: data.overview.absent || 0,
+        });
+        setStudents(data.students || []);
+      }
+    } catch (error) {
+      console.error('Fetch report error:', error);
+      alert('Không thể tải báo cáo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportFile = async () => {
+    if (!selectedYear || !selectedSemester) {
+      alert('Vui lòng chọn năm học và học kì');
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        school_year: selectedYear,
+        semester: selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : 'HK3',
+        format: 'excel',
+      });
+
+      if (selectedSubject) {
+        params.append('course_id', selectedSubject);
+      }
+
+      // Create CSV content
+      const csvContent = [
+        ['STT', 'Họ và tên', 'MSVV', 'Tổng số buổi', 'Tỉ lệ chuyên cần'],
+        ...students.map((student, index) => [
+          index + 1,
+          student.full_name,
+          student.student_code,
+          student.total_sessions,
+          student.attendance_rate,
+        ]),
+      ]
+        .map(row => row.join(','))
+        .join('\n');
+
+      // Add BOM for UTF-8
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute(
+        'download',
+        `BaoCaoDiemDanh_${selectedYear}_${selectedSemester === '1' ? 'HK1' : 'HK2'}.csv`
+      );
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      alert('Xuất file thành công!');
+    } catch (error) {
+      console.error('Export file error:', error);
+      alert('Xuất file thất bại');
+    }
+  };
 
   return (
     <div>
@@ -28,7 +127,7 @@ function GeneralReport() {
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <select
           value={selectedYear}
-          onChange={(e) => setSelectedYear(e.target.value)}
+          onChange={e => setSelectedYear(e.target.value)}
           className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
           <option value="">Năm Học</option>
@@ -38,7 +137,7 @@ function GeneralReport() {
 
         <select
           value={selectedSemester}
-          onChange={(e) => setSelectedSemester(e.target.value)}
+          onChange={e => setSelectedSemester(e.target.value)}
           className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
           <option value="">Học Kì</option>
@@ -48,12 +147,15 @@ function GeneralReport() {
 
         <select
           value={selectedSubject}
-          onChange={(e) => setSelectedSubject(e.target.value)}
+          onChange={e => setSelectedSubject(e.target.value)}
           className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="">Môn Học</option>
-          <option value="web">Lập Trình Web</option>
-          <option value="db">Cơ Sở Dữ Liệu</option>
+          <option value="">Môn Học (Tất cả)</option>
+          {courses.map(course => (
+            <option key={course.course_id} value={course.course_id}>
+              {course.name}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -66,14 +168,7 @@ function GeneralReport() {
             <div className="relative w-64 h-64">
               {/* Donut Chart - Simplified version */}
               <svg className="transform -rotate-90" viewBox="0 0 200 200">
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke="#e5e7eb"
-                  strokeWidth="40"
-                />
+                <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="40" />
                 <circle
                   cx="100"
                   cy="100"
@@ -133,46 +228,195 @@ function GeneralReport() {
         {/* Student Attendance Table */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-xl font-semibold mb-4">Danh Sách Sinh Viên</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 px-4">STT</th>
-                  <th className="text-left py-2 px-4">Họ và tên</th>
-                  <th className="text-left py-2 px-4">MSVV</th>
-                  <th className="text-left py-2 px-4">Tổng số buổi</th>
-                  <th className="text-left py-2 px-4">Tỉ lệ chuyên cần</th>
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((student, index) => (
-                  <tr key={student.id} className="border-b border-gray-100">
-                    <td className="py-2 px-4">{index + 1}</td>
-                    <td className="py-2 px-4">{student.name}</td>
-                    <td className="py-2 px-4">{student.studentId}</td>
-                    <td className="py-2 px-4">{student.totalSessions}</td>
-                    <td className="py-2 px-4">{student.attendanceRate}</td>
+          {loading ? (
+            <div className="text-center py-8">
+              <p className="text-gray-600">Đang tải...</p>
+            </div>
+          ) : students.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-600">
+                {selectedYear && selectedSemester
+                  ? 'Không có dữ liệu'
+                  : 'Vui lòng chọn năm học và học kì để xem báo cáo'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-2 px-4">STT</th>
+                    <th className="text-left py-2 px-4">Họ và tên</th>
+                    <th className="text-left py-2 px-4">MSVV</th>
+                    <th className="text-left py-2 px-4">Tổng số buổi</th>
+                    <th className="text-left py-2 px-4">Tỉ lệ chuyên cần</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {students.map((student, index) => (
+                    <tr
+                      key={student.student_id}
+                      className="border-b border-gray-100 hover:bg-gray-50"
+                    >
+                      <td className="py-2 px-4">{index + 1}</td>
+                      <td className="py-2 px-4">{student.full_name}</td>
+                      <td className="py-2 px-4">{student.student_code}</td>
+                      <td className="py-2 px-4">{student.total_sessions}</td>
+                      <td className="py-2 px-4">
+                        <span
+                          className={`font-semibold ${
+                            parseFloat(student.attendance_rate) >= 80
+                              ? 'text-green-600'
+                              : parseFloat(student.attendance_rate) >= 60
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                          }`}
+                        >
+                          {student.attendance_rate}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-4">
-        <button className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+        <button
+          onClick={() => setShowDetailModal(true)}
+          disabled={!selectedYear || !selectedSemester || students.length === 0}
+          className={`px-6 py-3 rounded-lg transition font-semibold ${
+            !selectedYear || !selectedSemester || students.length === 0
+              ? 'bg-gray-400 cursor-not-allowed text-white'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
+        >
           Xem chi tiết
         </button>
-        <button className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+        <button
+          onClick={handleExportFile}
+          disabled={!selectedYear || !selectedSemester || students.length === 0}
+          className={`px-6 py-3 rounded-lg transition font-semibold ${
+            !selectedYear || !selectedSemester || students.length === 0
+              ? 'bg-gray-400 cursor-not-allowed text-white'
+              : 'bg-blue-800 text-white hover:bg-blue-900'
+          }`}
+        >
           Xuất file
         </button>
       </div>
+
+      {/* Detail Modal */}
+      {showDetailModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-2xl font-semibold">Chi Tiết Báo Cáo Điểm Danh</h3>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Đúng giờ</p>
+                  <p className="text-2xl font-bold text-red-600">{attendanceData.onTime}%</p>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Muộn</p>
+                  <p className="text-2xl font-bold text-blue-600">{attendanceData.late}%</p>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Vắng</p>
+                  <p className="text-2xl font-bold text-yellow-600">{attendanceData.absent}%</p>
+                </div>
+              </div>
+              <div className="text-sm text-gray-600">
+                <p>
+                  <strong>Năm học:</strong> {selectedYear}
+                </p>
+                <p>
+                  <strong>Học kì:</strong>{' '}
+                  {selectedSemester === '1'
+                    ? 'Học kì 1'
+                    : selectedSemester === '2'
+                      ? 'Học kì 2'
+                      : 'Học kì 3'}
+                </p>
+                {selectedSubject && (
+                  <p>
+                    <strong>Môn học:</strong>{' '}
+                    {courses.find(c => c.course_id.toString() === selectedSubject)?.name ||
+                      selectedSubject}
+                  </p>
+                )}
+                <p>
+                  <strong>Tổng số sinh viên:</strong> {students.length}
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left py-3 px-4">STT</th>
+                    <th className="text-left py-3 px-4">Họ và tên</th>
+                    <th className="text-left py-3 px-4">MSVV</th>
+                    <th className="text-left py-3 px-4">Tổng số buổi</th>
+                    <th className="text-left py-3 px-4">Tỉ lệ chuyên cần</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((student, index) => (
+                    <tr
+                      key={student.student_id}
+                      className="border-b border-gray-100 hover:bg-gray-50"
+                    >
+                      <td className="py-3 px-4">{index + 1}</td>
+                      <td className="py-3 px-4">{student.full_name}</td>
+                      <td className="py-3 px-4">{student.student_code}</td>
+                      <td className="py-3 px-4">{student.total_sessions}</td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`font-semibold ${
+                            parseFloat(student.attendance_rate) >= 80
+                              ? 'text-green-600'
+                              : parseFloat(student.attendance_rate) >= 60
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                          }`}
+                        >
+                          {student.attendance_rate}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
 
-export default GeneralReport
-
-
+export default GeneralReport;

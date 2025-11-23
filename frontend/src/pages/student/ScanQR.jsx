@@ -1,56 +1,73 @@
-import { useState, useRef, useEffect } from 'react'
-import { FaQrcode, FaCamera, FaCheckCircle, FaTimesCircle } from 'react-icons/fa'
-import api from '../../utils/api'
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { FaQrcode, FaCamera, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import api from '../../utils/api';
 
 function ScanQR() {
-  const [isScanning, setIsScanning] = useState(false)
-  const [scanResult, setScanResult] = useState(null)
-  const [error, setError] = useState(null)
-  const videoRef = useRef(null)
-  const streamRef = useRef(null)
+  const [searchParams] = useSearchParams();
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [error, setError] = useState(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  // Check if token is in URL (from QR code scan)
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (token) {
+      processQRCode(token);
+    }
+  }, [searchParams]);
 
   const startScanning = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' } // Sử dụng camera sau
-      })
+        video: { facingMode: 'environment' }, // Sử dụng camera sau
+      });
       if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        streamRef.current = stream
-        setIsScanning(true)
-        setError(null)
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setIsScanning(true);
+        setError(null);
       }
     } catch (err) {
-      setError('Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.')
-      console.error('Error accessing camera:', err)
+      setError('Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.');
+      console.error('Error accessing camera:', err);
     }
-  }
+  };
 
   const stopScanning = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
     if (videoRef.current) {
-      videoRef.current.srcObject = null
+      videoRef.current.srcObject = null;
     }
-    setIsScanning(false)
-    setScanResult(null)
-    setError(null)
-  }
+    setIsScanning(false);
+    setScanResult(null);
+    setError(null);
+  };
 
   const handleManualInput = () => {
-    const qrCode = prompt('Nhập mã QR điểm danh:')
+    const qrCode = prompt('Nhập mã QR điểm danh:');
     if (qrCode) {
-      processQRCode(qrCode)
+      processQRCode(qrCode);
     }
-  }
+  };
 
-  const processQRCode = async (code) => {
+  const processQRCode = async code => {
     try {
+      // Extract token from URL if it's a full URL
+      let token = code;
+      if (code.includes('token=')) {
+        const url = new URL(code);
+        token = url.searchParams.get('token') || code;
+      }
+
       const response = await api.post('/student/attendance/scan', {
-        qr_token: code
-      })
+        token: token,
+      });
 
       if (response.data.success) {
         setScanResult({
@@ -62,29 +79,29 @@ function ScanQR() {
             session: response.data.data?.session?.session_number || 'N/A',
             time: new Date().toLocaleString('vi-VN'),
           },
-        })
+        });
       } else {
         setScanResult({
           success: false,
           message: response.data.message || 'Điểm danh thất bại',
-        })
+        });
       }
     } catch (error) {
-      console.error('Scan QR error:', error)
+      console.error('Scan QR error:', error);
       setScanResult({
         success: false,
         message: error.response?.data?.message || 'Mã QR không hợp lệ hoặc đã hết hạn',
-      })
+      });
     } finally {
-      stopScanning()
+      stopScanning();
     }
-  }
+  };
 
   useEffect(() => {
     return () => {
-      stopScanning()
-    }
-  }, [])
+      stopScanning();
+    };
+  }, []);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -135,9 +152,7 @@ function ScanQR() {
               </div>
             </div>
             <div className="text-center">
-              <p className="text-gray-600 mb-4">
-                Đưa mã QR vào khung hình để quét
-              </p>
+              <p className="text-gray-600 mb-4">Đưa mã QR vào khung hình để quét</p>
               <button
                 onClick={stopScanning}
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
@@ -158,23 +173,27 @@ function ScanQR() {
         )}
 
         {scanResult && (
-          <div className={`rounded-lg p-6 ${
-            scanResult.success 
-              ? 'bg-green-50 border-2 border-green-200' 
-              : 'bg-red-50 border-2 border-red-200'
-          }`}>
+          <div
+            className={`rounded-lg p-6 ${
+              scanResult.success
+                ? 'bg-green-50 border-2 border-green-200'
+                : 'bg-red-50 border-2 border-red-200'
+            }`}
+          >
             <div className="text-center">
               {scanResult.success ? (
                 <FaCheckCircle className="text-6xl text-green-600 mx-auto mb-4" />
               ) : (
                 <FaTimesCircle className="text-6xl text-red-600 mx-auto mb-4" />
               )}
-              <h3 className={`text-2xl font-semibold mb-4 ${
-                scanResult.success ? 'text-green-700' : 'text-red-700'
-              }`}>
+              <h3
+                className={`text-2xl font-semibold mb-4 ${
+                  scanResult.success ? 'text-green-700' : 'text-red-700'
+                }`}
+              >
                 {scanResult.message}
               </h3>
-              
+
               {scanResult.success && scanResult.classInfo && (
                 <div className="bg-white rounded-lg p-4 mt-4 text-left">
                   <p className="text-gray-700 mb-2">
@@ -194,8 +213,8 @@ function ScanQR() {
 
               <button
                 onClick={() => {
-                  setScanResult(null)
-                  setError(null)
+                  setScanResult(null);
+                  setError(null);
                 }}
                 className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
               >
@@ -217,8 +236,7 @@ function ScanQR() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default ScanQR
-
+export default ScanQR;
