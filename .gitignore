@@ -43,6 +43,9 @@ build/
 tmp/
 temp/
 
+# Husky
+.husky/_
+
 # Frontend and Backend have their own .gitignore files
 # This root .gitignore is for project-level files only
 

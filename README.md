@@ -35,11 +35,13 @@ npm install
 ### 3. Cấu hình Database
 
 1. Tạo database từ file SQL:
+
 ```bash
 mysql -u root -p < Class_Management_COMPLETE.sql
 ```
 
 2. Tạo file `.env` trong thư mục `backend/`:
+
 ```env
 DB_HOST=localhost
 DB_PORT=3306
@@ -49,6 +51,7 @@ DB_PASSWORD=your_password
 ```
 
 3. Khởi tạo Sequelize (nếu chưa có):
+
 ```bash
 cd backend
 npx sequelize-cli init
@@ -79,11 +82,38 @@ Frontend chạy tại `http://localhost:3000`
 ## Các gói đã cài đặt
 
 ### Backend
+
 - express, sequelize, sequelize-cli, mysql2, cors, dotenv
 
 ### Frontend
+
 - react, react-dom, vite, tailwindcss, bootstrap, react-router-dom, axios, react-icons
 
 ## Tài liệu API
 
 Xem file [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) để biết chi tiết các API endpoints.
+
+## 📝 Commit Code
+
+Dự án sử dụng **Conventional Commits** để đảm bảo commit message nhất quán.
+
+### Format:
+
+```
+<type>(<scope>): <subject>
+```
+
+### Ví dụ:
+
+```bash
+git commit -m "feat(backend): thêm API điểm danh QR"
+git commit -m "fix(frontend): sửa lỗi hiển thị lớp học"
+```
+
+### Cài đặt (sau khi clone):
+
+```bash
+npm install
+```
+
+Xem [COMMIT_GUIDE.md](./COMMIT_GUIDE.md) để biết chi tiết.
