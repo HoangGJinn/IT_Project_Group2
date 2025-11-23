@@ -50,12 +50,8 @@ DB_USER=root
 DB_PASSWORD=your_password
 ```
 
-3. Khởi tạo Sequelize (nếu chưa có):
-
-```bash
-cd backend
-npx sequelize-cli init
-```
+**Lưu ý:** Database schema đã được định nghĩa trong file `Class_Management_COMPLETE.sql`.
+Nếu cần thay đổi schema, chỉnh sửa file SQL và chạy lại.
 
 ## Chạy ứng dụng
 
