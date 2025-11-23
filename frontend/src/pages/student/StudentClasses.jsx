@@ -1,0 +1,174 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import api from '../../utils/api'
+
+function StudentClasses() {
+  const navigate = useNavigate()
+  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedSemester, setSelectedSemester] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [classes, setClasses] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchClasses()
+  }, [selectedYear, selectedSemester])
+
+  const fetchClasses = async () => {
+    try {
+      setLoading(true)
+      const params = {}
+      if (selectedYear) params.school_year = selectedYear
+      if (selectedSemester) params.semester = selectedSemester
+      if (searchTerm) params.search = searchTerm
+
+      const response = await api.get('/student/classes', { params })
+      if (response.data.success) {
+        setClasses(response.data.data || [])
+      }
+    } catch (error) {
+      console.error('Fetch classes error:', error)
+      setClasses([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFilter = () => {
+    fetchClasses()
+  }
+
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold mb-6 text-blue-600">Lớp Học Của Tôi</h1>
+
+      {/* Filter Section */}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(e.target.value)}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
+        >
+          <option value="">Năm Học v</option>
+          <option value="2023-2024">2023-2024</option>
+          <option value="2024-2025">2024-2025</option>
+        </select>
+
+        <select
+          value={selectedSemester}
+          onChange={(e) => setSelectedSemester(e.target.value)}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
+        >
+          <option value="">Học Kì v</option>
+          <option value="1">Học Kì 1</option>
+          <option value="2">Học Kì 2</option>
+        </select>
+
+        <button 
+          onClick={handleFilter}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+        >
+          LỌC
+        </button>
+
+        <input
+          type="text"
+          placeholder="Tìm kiếm lớp học..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* Class Cards Grid */}
+      {loading ? (
+        <div className="text-center py-12">
+          <p className="text-gray-600">Đang tải...</p>
+        </div>
+      ) : classes.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-600">Chưa có lớp học nào</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {classes.map((classItem) => (
+            <div
+              key={classItem.class_id}
+              className="bg-white rounded-lg shadow-md hover:shadow-lg transition cursor-pointer border border-gray-200"
+              onClick={() => navigate(`/student/classes/${classItem.class_id}`)}
+            >
+              {/* Image */}
+              {classItem.image_url ? (
+                <img
+                  src={classItem.image_url}
+                  alt={classItem.name || classItem.course?.name}
+                  className="w-full h-40 object-cover rounded-t-lg"
+                />
+              ) : (
+                <div className="w-full h-40 bg-gradient-to-br from-blue-100 to-blue-200 rounded-t-lg flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-4xl font-bold text-blue-600 mb-2">
+                      {(classItem.name || classItem.course?.name || 'L').charAt(0)}
+                    </div>
+                    <p className="text-sm text-gray-600">Hình ảnh lớp học</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Class Info */}
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">
+                  {classItem.name || classItem.course?.name}
+                </h3>
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p>
+                    <span className="font-semibold">Mã lớp:</span> {classItem.class_code}
+                  </p>
+                  {classItem.teacher && (
+                    <p>
+                      <span className="font-semibold">Giảng viên:</span> {classItem.teacher.full_name}
+                    </p>
+                  )}
+                  {classItem.schedule_days && (
+                    <p>
+                      <span className="font-semibold">Lịch học:</span> {classItem.schedule_days}
+                    </p>
+                  )}
+                  {classItem.schedule_periods && (
+                    <p>
+                      <span className="font-semibold">Tiết:</span> {classItem.schedule_periods}
+                    </p>
+                  )}
+                  {classItem.room && (
+                    <p>
+                      <span className="font-semibold">Phòng:</span> {classItem.room}
+                    </p>
+                  )}
+                </div>
+
+                {/* Attendance Stats */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Tỉ lệ chuyên cần:</span>
+                    <span className="text-lg font-semibold text-green-600">
+                      {classItem.attendance_rate || '0%'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-sm text-gray-600">Số buổi:</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      {classItem.attended_sessions || 0}/{classItem.total_sessions || 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default StudentClasses
+

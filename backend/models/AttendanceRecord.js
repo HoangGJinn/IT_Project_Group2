@@ -1,0 +1,48 @@
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  const AttendanceRecord = sequelize.define('AttendanceRecord', {
+    record_id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true
+    },
+    attendance_session_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false
+    },
+    student_id: {
+      type: DataTypes.BIGINT,
+      allowNull: false
+    },
+    checkin_time: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    status: {
+      type: DataTypes.ENUM('PRESENT', 'LATE', 'ABSENT', 'EXCUSED'),
+      allowNull: false,
+      defaultValue: 'ABSENT'
+    },
+    source: {
+      type: DataTypes.ENUM('QR', 'CODE', 'MANUAL', 'GEO'),
+      allowNull: true
+    },
+    note: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    }
+  }, {
+    tableName: 'attendance_records',
+    timestamps: false,
+    indexes: [
+      {
+        unique: true,
+        fields: ['attendance_session_id', 'student_id']
+      }
+    ]
+  });
+
+  return AttendanceRecord;
+};
+
