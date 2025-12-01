@@ -37,4 +37,12 @@ router.delete(
   classController.removeStudent
 );
 
+// Get all attendance records for a class
+router.get(
+  '/:id/attendance',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  classController.getAllAttendanceRecords
+);
+
 module.exports = router;

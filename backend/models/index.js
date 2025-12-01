@@ -77,13 +77,13 @@ Class.hasMany(Session, { foreignKey: 'class_id' });
 Session.hasMany(SessionMaterial, { foreignKey: 'session_id', as: 'materials' });
 
 AttendanceSession.belongsTo(Session, { foreignKey: 'session_id', as: 'session' });
-Session.hasOne(AttendanceSession, { foreignKey: 'session_id' });
+Session.hasOne(AttendanceSession, { foreignKey: 'session_id', as: 'attendanceSession' });
 
 QRToken.belongsTo(AttendanceSession, { foreignKey: 'attendance_session_id', as: 'attendanceSession' });
-AttendanceSession.hasMany(QRToken, { foreignKey: 'attendance_session_id' });
+AttendanceSession.hasOne(QRToken, { foreignKey: 'attendance_session_id', as: 'qrToken' });
 
 AttendanceRecord.belongsTo(AttendanceSession, { foreignKey: 'attendance_session_id', as: 'attendanceSession' });
-AttendanceSession.hasMany(AttendanceRecord, { foreignKey: 'attendance_session_id' });
+AttendanceSession.hasMany(AttendanceRecord, { foreignKey: 'attendance_session_id', as: 'attendanceRecords' });
 
 AttendanceRecord.belongsTo(Student, { foreignKey: 'student_id', as: 'student' });
 Student.hasMany(AttendanceRecord, { foreignKey: 'student_id' });

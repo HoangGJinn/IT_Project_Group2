@@ -17,19 +17,19 @@ const corsOptions = {
       'http://127.0.0.1:5173',
     ].filter(Boolean); // Remove undefined values
 
-    // In development, allow all local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    // In development, allow ngrok and localhost
     if (process.env.NODE_ENV !== 'production') {
       if (!origin) {
         return callback(null, true);
       }
 
-      // Allow localhost and local network IPs
-      const isLocalNetwork =
-        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
-          origin
-        );
+      // Allow ngrok domains (both old and new ngrok domains)
+      const isNgrok = /^https?:\/\/.*\.(ngrok\.io|ngrok-free\.app|ngrok\.app|ngrok-free\.dev)(:\d+)?$/.test(origin);
+      
+      // Allow localhost
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
-      if (allowedOrigins.includes(origin) || isLocalNetwork) {
+      if (allowedOrigins.includes(origin) || isNgrok || isLocalhost) {
         return callback(null, true);
       }
     }

@@ -54,6 +54,12 @@ module.exports = (sequelize) => {
       allowNull: true,
       defaultValue: 15
     },
+    early_start_minutes: {
+      type: DataTypes.SMALLINT,
+      allowNull: true,
+      defaultValue: 0,
+      comment: 'Cho phép bắt đầu điểm danh trước giờ học (phút)'
+    },
     default_method: {
       type: DataTypes.ENUM('QR', 'CODE', 'MANUAL', 'GEO'),
       allowNull: true,
@@ -66,6 +72,32 @@ module.exports = (sequelize) => {
     schedule_periods: {
       type: DataTypes.STRING(50),
       allowNull: true
+    },
+    start_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'Ngày bắt đầu môn học'
+    },
+    end_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'Ngày kết thúc môn học'
+    },
+    latitude: {
+      type: DataTypes.DECIMAL(10, 8),
+      allowNull: true,
+      comment: 'Vĩ độ của địa điểm lớp học'
+    },
+    longitude: {
+      type: DataTypes.DECIMAL(11, 8),
+      allowNull: true,
+      comment: 'Kinh độ của địa điểm lớp học'
+    },
+    location_radius: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 100,
+      comment: 'Bán kính cho phép điểm danh (mét), mặc định 100m'
     },
     created_at: {
       type: DataTypes.DATE,

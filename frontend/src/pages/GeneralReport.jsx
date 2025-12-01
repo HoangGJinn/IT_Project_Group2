@@ -9,6 +9,10 @@ function GeneralReport() {
     onTime: 0,
     late: 0,
     absent: 0,
+    onTimeCount: 0,
+    lateCount: 0,
+    absentCount: 0,
+    totalRecords: 0,
   });
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,15 +57,42 @@ function GeneralReport() {
       if (response.data.success) {
         const data = response.data.data;
         setAttendanceData({
-          onTime: data.overview.on_time || 0,
-          late: data.overview.late || 0,
-          absent: data.overview.absent || 0,
+          onTime: data.overview?.on_time || 0,
+          late: data.overview?.late || 0,
+          absent: data.overview?.absent || 0,
+          onTimeCount: data.overview?.on_time_count || 0,
+          lateCount: data.overview?.late_count || 0,
+          absentCount: data.overview?.absent_count || 0,
+          totalRecords: data.overview?.total_records || 0,
         });
         setStudents(data.students || []);
+      } else {
+        setAttendanceData({
+          onTime: 0,
+          late: 0,
+          absent: 0,
+          onTimeCount: 0,
+          lateCount: 0,
+          absentCount: 0,
+          totalRecords: 0,
+        });
+        setStudents([]);
       }
     } catch (error) {
       console.error('Fetch report error:', error);
-      alert('Không thể tải báo cáo');
+      setAttendanceData({
+        onTime: 0,
+        late: 0,
+        absent: 0,
+        onTimeCount: 0,
+        lateCount: 0,
+        absentCount: 0,
+        totalRecords: 0,
+      });
+      setStudents([]);
+      if (error.response?.status !== 400) {
+        alert('Không thể tải báo cáo: ' + (error.response?.data?.message || error.message));
+      }
     } finally {
       setLoading(false);
     }
@@ -164,65 +195,108 @@ function GeneralReport() {
         {/* Attendance Overview Chart */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-xl font-semibold mb-4">Tổng Quan Điểm Danh</h3>
-          <div className="flex items-center justify-center">
-            <div className="relative w-64 h-64">
-              {/* Donut Chart - Simplified version */}
-              <svg className="transform -rotate-90" viewBox="0 0 200 200">
-                <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="40" />
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke="#ef4444"
-                  strokeWidth="40"
-                  strokeDasharray={`${(attendanceData.onTime / 100) * 502.4} 502.4`}
-                />
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke="#fbbf24"
-                  strokeWidth="40"
-                  strokeDasharray={`${(attendanceData.absent / 100) * 502.4} 502.4`}
-                  strokeDashoffset={`-${(attendanceData.onTime / 100) * 502.4}`}
-                />
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="40"
-                  strokeDasharray={`${(attendanceData.late / 100) * 502.4} 502.4`}
-                  strokeDashoffset={`-${((attendanceData.onTime + attendanceData.absent) / 100) * 502.4}`}
-                />
-                <text
-                  x="100"
-                  y="110"
-                  textAnchor="middle"
-                  className="text-3xl font-bold fill-gray-800"
-                >
-                  {attendanceData.onTime}%
-                </text>
-              </svg>
+          {attendanceData.totalRecords > 0 ? (
+            <>
+              <div className="flex items-center justify-center mb-6">
+                <div className="relative w-64 h-64">
+                  {/* Donut Chart */}
+                  <svg className="transform -rotate-90" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="40" />
+                    {/* On Time (Red) */}
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="40"
+                      strokeDasharray={`${(attendanceData.onTime / 100) * 502.4} 502.4`}
+                    />
+                    {/* Late (Blue) */}
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth="40"
+                      strokeDasharray={`${(attendanceData.late / 100) * 502.4} 502.4`}
+                      strokeDashoffset={`-${(attendanceData.onTime / 100) * 502.4}`}
+                    />
+                    {/* Absent (Yellow) */}
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="40"
+                      strokeDasharray={`${(attendanceData.absent / 100) * 502.4} 502.4`}
+                      strokeDashoffset={`-${((attendanceData.onTime + attendanceData.late) / 100) * 502.4}`}
+                    />
+                    <text
+                      x="100"
+                      y="105"
+                      textAnchor="middle"
+                      className="text-4xl font-bold fill-gray-800"
+                    >
+                      {attendanceData.onTime + attendanceData.late}%
+                    </text>
+                    <text
+                      x="100"
+                      y="125"
+                      textAnchor="middle"
+                      className="text-sm fill-gray-600"
+                    >
+                      Có mặt
+                    </text>
+                  </svg>
+                </div>
+              </div>
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 bg-green-500 rounded-full"></div>
+                    <span className="font-medium">Đúng giờ</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-green-600">{attendanceData.onTime}%</div>
+                    <div className="text-xs text-gray-600">{attendanceData.onTimeCount} lượt</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 bg-blue-500 rounded-full"></div>
+                    <span className="font-medium">Muộn</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-blue-600">{attendanceData.late}%</div>
+                    <div className="text-xs text-gray-600">{attendanceData.lateCount} lượt</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 bg-yellow-500 rounded-full"></div>
+                    <span className="font-medium">Vắng</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-yellow-600">{attendanceData.absent}%</div>
+                    <div className="text-xs text-gray-600">{attendanceData.absentCount} lượt</div>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-700">Tổng số bản ghi:</span>
+                    <span className="font-bold text-gray-900">{attendanceData.totalRecords}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">Chưa có dữ liệu điểm danh</p>
             </div>
-          </div>
-          <div className="mt-6 space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-              <span>Đúng giờ</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
-              <span>Muộn</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
-              <span>Vắng</span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Student Attendance Table */}

@@ -1,9 +1,10 @@
 const { QRToken, AttendanceSession, AttendanceRecord, Student, User, Session, Class } = require('../models');
 const { Op } = require('sequelize');
+const { isWithinRadius } = require('../utils/geolocation');
 
 const scanQR = async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, latitude, longitude } = req.body;
 
     if (!token) {
       return res.status(400).json({
@@ -47,6 +48,33 @@ const scanQR = async (req, res) => {
       });
     }
 
+    // Check location if class has location set
+    const classData = qrToken.attendanceSession.session.class;
+    if (classData.latitude && classData.longitude) {
+      if (!latitude || !longitude) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng bật định vị để điểm danh. Nếu bạn đang dùng máy tính, vui lòng sử dụng điện thoại để điểm danh chính xác hơn.'
+        });
+      }
+
+      const radius = classData.location_radius || 100;
+      const withinRadius = isWithinRadius(
+        parseFloat(classData.latitude),
+        parseFloat(classData.longitude),
+        parseFloat(latitude),
+        parseFloat(longitude),
+        radius
+      );
+
+      if (!withinRadius) {
+        return res.status(400).json({
+          success: false,
+          message: `Bạn không ở trong phạm vi lớp học. Vui lòng đến lớp để điểm danh (bán kính: ${radius}m). Nếu bạn đang dùng máy tính, vị trí có thể không chính xác - vui lòng sử dụng điện thoại.`
+        });
+      }
+    }
+
     const studentId = student.student_id;
 
     const attendanceSessionId = qrToken.attendance_session_id;
@@ -78,7 +106,9 @@ const scanQR = async (req, res) => {
       student_id: studentId,
       checkin_time: now,
       status,
-      source: 'QR'
+      source: 'QR',
+      latitude: latitude ? parseFloat(latitude) : null,
+      longitude: longitude ? parseFloat(longitude) : null
     });
 
     res.json({
@@ -131,7 +161,9 @@ const getAttendance = async (req, res) => {
         },
         status: r.status,
         checkin_time: r.checkin_time,
-        source: r.source
+        source: r.source,
+        latitude: r.latitude,
+        longitude: r.longitude
       }))
     });
   } catch (error) {

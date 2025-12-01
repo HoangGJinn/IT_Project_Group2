@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FaQrcode, FaCamera, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { Html5Qrcode } from 'html5-qrcode';
+import { FaQrcode, FaCamera, FaCheckCircle, FaTimesCircle, FaKeyboard } from 'react-icons/fa';
 import api from '../../utils/api';
 
 function ScanQR() {
@@ -8,8 +9,6 @@ function ScanQR() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
 
   // Check if token is in URL (from QR code scan)
   useEffect(() => {
@@ -19,54 +18,151 @@ function ScanQR() {
     }
   }, [searchParams]);
 
+  const html5QrCodeRef = useRef(null);
+
   const startScanning = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // Sử dụng camera sau
+      setError(null);
+      setIsScanning(true);
+      
+      // Initialize Html5Qrcode
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      html5QrCodeRef.current = html5QrCode;
+
+      // Start scanning
+      await html5QrCode.start(
+        { facingMode: "environment" }, // Use back camera
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
+        (decodedText, decodedResult) => {
+          // Successfully scanned
+          processQRCode(decodedText);
+        },
+        (errorMessage) => {
+          // Ignore scanning errors (they're frequent during scanning)
+        }
+      ).catch((err) => {
+        console.error('Error starting scanner:', err);
+        setError('Không thể khởi động camera. Vui lòng kiểm tra quyền truy cập camera.');
+        setIsScanning(false);
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setIsScanning(true);
-        setError(null);
-      }
     } catch (err) {
       setError('Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.');
       console.error('Error accessing camera:', err);
+      setIsScanning(false);
     }
   };
 
-  const stopScanning = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+  const stopScanning = async () => {
+    try {
+      if (html5QrCodeRef.current) {
+        await html5QrCodeRef.current.stop();
+        await html5QrCodeRef.current.clear();
+        html5QrCodeRef.current = null;
+      }
+    } catch (err) {
+      console.error('Error stopping scanner:', err);
     }
     setIsScanning(false);
     setScanResult(null);
     setError(null);
   };
 
+  const [manualInput, setManualInput] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
+
   const handleManualInput = () => {
-    const qrCode = prompt('Nhập mã QR điểm danh:');
-    if (qrCode) {
-      processQRCode(qrCode);
+    setShowManualInput(true);
+  };
+
+  const handleSubmitManualInput = () => {
+    if (manualInput.trim()) {
+      processQRCode(manualInput.trim());
+      setManualInput('');
+      setShowManualInput(false);
     }
   };
 
   const processQRCode = async code => {
     try {
+      // Stop scanning first
+      await stopScanning();
+      
       // Extract token from URL if it's a full URL
       let token = code;
       if (code.includes('token=')) {
-        const url = new URL(code);
-        token = url.searchParams.get('token') || code;
+        try {
+          const url = new URL(code);
+          token = url.searchParams.get('token') || code;
+        } catch (e) {
+          // If URL parsing fails, use the code as is
+          token = code;
+        }
+      }
+
+      // Detect if device is mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      // Get GPS location
+      let latitude = null;
+      let longitude = null;
+      let locationAccuracy = null;
+      let locationWarning = null;
+      
+      try {
+        const position = await new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error('Trình duyệt không hỗ trợ định vị'));
+            return;
+          }
+          
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            {
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 0
+            }
+          );
+        });
+        
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+        locationAccuracy = position.coords.accuracy; // Accuracy in meters
+        
+        // Check if accuracy is too low (likely IP geolocation on desktop)
+        if (!isMobile && locationAccuracy > 1000) {
+          locationWarning = 'Cảnh báo: Vị trí có thể không chính xác trên máy tính. Vui lòng sử dụng điện thoại để điểm danh chính xác hơn.';
+        } else if (locationAccuracy > 500) {
+          locationWarning = 'Cảnh báo: Độ chính xác vị trí thấp. Vui lòng kiểm tra lại.';
+        }
+      } catch (geoError) {
+        // If location is required by backend, it will return an error
+        if (!isMobile) {
+          locationWarning = 'Máy tính không có GPS. Vui lòng sử dụng điện thoại để điểm danh hoặc liên hệ giáo viên.';
+        }
+        console.warn('Could not get location:', geoError);
+      }
+      
+      // Show warning if on desktop and location is required
+      if (locationWarning && !isMobile) {
+        const proceed = window.confirm(`${locationWarning}\n\nBạn có muốn tiếp tục điểm danh không?`);
+        if (!proceed) {
+          setScanResult({
+            success: false,
+            message: 'Điểm danh đã bị hủy. Vui lòng sử dụng điện thoại để điểm danh.'
+          });
+          return;
+        }
       }
 
       const response = await api.post('/student/attendance/scan', {
         token: token,
+        ...(latitude && longitude ? { latitude, longitude } : {})
       });
 
       if (response.data.success) {
@@ -74,10 +170,12 @@ function ScanQR() {
           success: true,
           message: response.data.message || 'Điểm danh thành công!',
           classInfo: {
-            subject: response.data.data?.class?.name || response.data.data?.class?.course?.name,
-            classCode: response.data.data?.class?.class_code,
-            session: response.data.data?.session?.session_number || 'N/A',
-            time: new Date().toLocaleString('vi-VN'),
+            subject: response.data.data?.class_info?.name || 'N/A',
+            classCode: response.data.data?.class_info?.class_code || 'N/A',
+            status: response.data.data?.status || 'PRESENT',
+            checkinTime: response.data.data?.checkin_time 
+              ? new Date(response.data.data.checkin_time).toLocaleString('vi-VN')
+              : new Date().toLocaleString('vi-VN'),
           },
         });
       } else {
@@ -92,8 +190,6 @@ function ScanQR() {
         success: false,
         message: error.response?.data?.message || 'Mã QR không hợp lệ hoặc đã hết hạn',
       });
-    } finally {
-      stopScanning();
     }
   };
 
@@ -129,8 +225,9 @@ function ScanQR() {
               </button>
               <button
                 onClick={handleManualInput}
-                className="px-8 py-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold"
+                className="px-8 py-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold flex items-center justify-center gap-2"
               >
+                <FaKeyboard className="text-xl" />
                 Nhập Mã Thủ Công
               </button>
             </div>
@@ -140,13 +237,7 @@ function ScanQR() {
         {isScanning && (
           <div>
             <div className="relative mb-4">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full rounded-lg border-2 border-blue-500"
-                style={{ maxHeight: '500px' }}
-              />
+              <div id="qr-reader" className="w-full rounded-lg border-2 border-blue-500 overflow-hidden"></div>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="border-4 border-blue-500 rounded-lg w-64 h-64"></div>
               </div>
@@ -158,6 +249,41 @@ function ScanQR() {
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
               >
                 Dừng Quét
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showManualInput && (
+          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
+            <h3 className="font-semibold text-gray-700 mb-2">Nhập Mã QR Thủ Công</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={manualInput}
+                onChange={e => setManualInput(e.target.value)}
+                placeholder="Nhập mã QR hoặc URL..."
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onKeyPress={e => {
+                  if (e.key === 'Enter') {
+                    handleSubmitManualInput();
+                  }
+                }}
+              />
+              <button
+                onClick={handleSubmitManualInput}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+              >
+                Xác Nhận
+              </button>
+              <button
+                onClick={() => {
+                  setShowManualInput(false);
+                  setManualInput('');
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+              >
+                Hủy
               </button>
             </div>
           </div>
@@ -197,16 +323,25 @@ function ScanQR() {
               {scanResult.success && scanResult.classInfo && (
                 <div className="bg-white rounded-lg p-4 mt-4 text-left">
                   <p className="text-gray-700 mb-2">
-                    <span className="font-semibold">Môn học:</span> {scanResult.classInfo.subject}
+                    <span className="font-semibold">Môn học/Lớp:</span> {scanResult.classInfo.subject}
                   </p>
                   <p className="text-gray-700 mb-2">
                     <span className="font-semibold">Mã lớp:</span> {scanResult.classInfo.classCode}
                   </p>
                   <p className="text-gray-700 mb-2">
-                    <span className="font-semibold">Buổi học:</span> {scanResult.classInfo.session}
+                    <span className="font-semibold">Trạng thái:</span>{' '}
+                    <span className={`font-semibold ${
+                      scanResult.classInfo.status === 'PRESENT' ? 'text-green-600' :
+                      scanResult.classInfo.status === 'LATE' ? 'text-yellow-600' :
+                      'text-red-600'
+                    }`}>
+                      {scanResult.classInfo.status === 'PRESENT' ? '✅ Có mặt' :
+                       scanResult.classInfo.status === 'LATE' ? '⏰ Đi muộn' :
+                       scanResult.classInfo.status}
+                    </span>
                   </p>
                   <p className="text-gray-700">
-                    <span className="font-semibold">Thời gian:</span> {scanResult.classInfo.time}
+                    <span className="font-semibold">Thời gian điểm danh:</span> {scanResult.classInfo.checkinTime}
                   </p>
                 </div>
               )}

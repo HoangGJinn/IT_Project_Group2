@@ -31,6 +31,16 @@ module.exports = (sequelize) => {
     note: {
       type: DataTypes.STRING(255),
       allowNull: true
+    },
+    latitude: {
+      type: DataTypes.DECIMAL(10, 8),
+      allowNull: true,
+      comment: 'Vĩ độ nơi điểm danh'
+    },
+    longitude: {
+      type: DataTypes.DECIMAL(11, 8),
+      allowNull: true,
+      comment: 'Kinh độ nơi điểm danh'
     }
   }, {
     tableName: 'attendance_records',

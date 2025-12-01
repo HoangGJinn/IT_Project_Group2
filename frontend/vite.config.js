@@ -8,9 +8,18 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
-      host: '0.0.0.0', // Cho phép truy cập từ mạng local
+      host: '0.0.0.0', // Cho phép ngrok tunnel
       port: parseInt(env.VITE_PORT) || 3000,
       strictPort: false,
+      // Allow ngrok domains and localhost
+      allowedHosts: [
+        '.ngrok.io',
+        '.ngrok-free.app',
+        '.ngrok.app',
+        '.ngrok-free.dev',
+        'localhost',
+        '127.0.0.1'
+      ],
       proxy: {
         '/api': {
           target: env.VITE_API_BASE_URL || 'http://localhost:5000',
