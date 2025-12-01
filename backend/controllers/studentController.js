@@ -1,4 +1,4 @@
-const { Enrollment, Class, Course, Teacher, User, Student, Session, AttendanceRecord, AttendanceSession } = require('../models');
+const { Enrollment, Class, Course, Teacher, User, Student, Session, AttendanceRecord, AttendanceSession, QRToken } = require('../models');
 const { Op } = require('sequelize');
 
 const getClasses = async (req, res) => {
@@ -221,10 +221,49 @@ const getClassById = async (req, res) => {
       ? ((attendedSessions / totalSessions) * 100).toFixed(1) + '%'
       : '0%';
 
-    // Get sessions
+    // Get sessions with QR token info and attendance records
     const sessions = await Session.findAll({
       where: { class_id: id },
+      include: [{
+        model: AttendanceSession,
+        as: 'attendanceSession',
+        required: false,
+        include: [{
+          model: QRToken,
+          as: 'qrToken',
+          required: false
+        }, {
+          model: AttendanceRecord,
+          as: 'attendanceRecords',
+          required: false,
+          where: { student_id: student.student_id }
+        }]
+      }],
       order: [['date', 'DESC']]
+    });
+
+    // Format sessions with QR info and attendance status
+    const formattedSessions = sessions.map(session => {
+      const sessionData = session.toJSON();
+      if (sessionData.attendanceSession?.qrToken) {
+        sessionData.hasQR = true;
+        sessionData.qrToken = sessionData.attendanceSession.qrToken.token;
+        sessionData.qrExpiresAt = sessionData.attendanceSession.qrToken.expires_at;
+        sessionData.qrExpired = new Date(sessionData.attendanceSession.qrToken.expires_at) < new Date();
+      } else {
+        sessionData.hasQR = false;
+      }
+      // Check if student has already checked in
+      if (sessionData.attendanceSession?.attendanceRecords && sessionData.attendanceSession.attendanceRecords.length > 0) {
+        const record = sessionData.attendanceSession.attendanceRecords[0];
+        sessionData.attendanceStatus = record.status;
+        sessionData.attendanceTime = record.checkin_time;
+        sessionData.hasAttended = true;
+      } else {
+        sessionData.hasAttended = false;
+        sessionData.attendanceStatus = null;
+      }
+      return sessionData;
     });
 
     res.json({
@@ -236,7 +275,7 @@ const getClassById = async (req, res) => {
           attended_sessions: attendedSessions,
           attendance_rate: attendanceRate
         },
-        sessions
+        sessions: formattedSessions
       }
     });
   } catch (error) {

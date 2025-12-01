@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
+import { formatScheduleDays, formatSchedulePeriods } from '../../utils/schedule'
 
 function StudentClasses() {
   const navigate = useNavigate()
@@ -49,7 +50,7 @@ function StudentClasses() {
           onChange={(e) => setSelectedYear(e.target.value)}
           className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="">Năm Học v</option>
+          <option value="">Năm Học</option>
           <option value="2023-2024">2023-2024</option>
           <option value="2024-2025">2024-2025</option>
         </select>
@@ -59,7 +60,7 @@ function StudentClasses() {
           onChange={(e) => setSelectedSemester(e.target.value)}
           className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="">Học Kì v</option>
+          <option value="">Học Kì</option>
           <option value="1">Học Kì 1</option>
           <option value="2">Học Kì 2</option>
         </select>
@@ -131,12 +132,12 @@ function StudentClasses() {
                   )}
                   {classItem.schedule_days && (
                     <p>
-                      <span className="font-semibold">Lịch học:</span> {classItem.schedule_days}
+                      <span className="font-semibold">Lịch học:</span> {formatScheduleDays(classItem.schedule_days)}
                     </p>
                   )}
                   {classItem.schedule_periods && (
                     <p>
-                      <span className="font-semibold">Tiết:</span> {classItem.schedule_periods}
+                      <span className="font-semibold">Tiết:</span> {formatSchedulePeriods(classItem.schedule_periods)}
                     </p>
                   )}
                   {classItem.room && (
