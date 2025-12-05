@@ -20,38 +20,149 @@ function ScanQR() {
 
   const html5QrCodeRef = useRef(null);
 
+  // Check camera permissions and availability
+  const checkCameraPermissions = async () => {
+    // Check if navigator.mediaDevices is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error(
+        'Trình duyệt không hỗ trợ truy cập camera. Vui lòng sử dụng trình duyệt hiện đại hơn.'
+      );
+    }
+
+    // Check if we can enumerate devices (this helps check permissions)
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+      if (videoDevices.length === 0) {
+        throw new Error('Không tìm thấy camera trên thiết bị.');
+      }
+    } catch (enumError) {
+      // If enumeration fails, it might be a permission issue
+      console.warn('Could not enumerate devices:', enumError);
+    }
+
+    // Try to get camera stream to request permission
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      });
+      // Stop the stream immediately, we just needed permission
+      stream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch (permissionError) {
+      if (
+        permissionError.name === 'NotAllowedError' ||
+        permissionError.name === 'PermissionDeniedError'
+      ) {
+        throw new Error(
+          'Quyền truy cập camera bị từ chối. Vui lòng cho phép quyền truy cập camera trong cài đặt trình duyệt.'
+        );
+      } else if (
+        permissionError.name === 'NotFoundError' ||
+        permissionError.name === 'DevicesNotFoundError'
+      ) {
+        throw new Error('Không tìm thấy camera trên thiết bị.');
+      } else if (
+        permissionError.name === 'NotReadableError' ||
+        permissionError.name === 'TrackStartError'
+      ) {
+        throw new Error(
+          'Camera đang được sử dụng bởi ứng dụng khác. Vui lòng đóng các ứng dụng khác đang sử dụng camera.'
+        );
+      } else if (
+        permissionError.name === 'OverconstrainedError' ||
+        permissionError.name === 'ConstraintNotSatisfiedError'
+      ) {
+        // Try with default camera if back camera is not available
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream.getTracks().forEach(track => track.stop());
+          return true;
+        } catch (fallbackError) {
+          throw new Error('Không thể truy cập camera. Vui lòng kiểm tra cài đặt camera.');
+        }
+      } else {
+        throw new Error('Không thể truy cập camera. Vui lòng kiểm tra quyền truy cập camera.');
+      }
+    }
+  };
+
   const startScanning = async () => {
     try {
       setError(null);
       setIsScanning(true);
-      
+
+      // First, check camera permissions
+      await checkCameraPermissions();
+
       // Initialize Html5Qrcode
-      const html5QrCode = new Html5Qrcode("qr-reader");
+      const html5QrCode = new Html5Qrcode('qr-reader');
       html5QrCodeRef.current = html5QrCode;
 
-      // Start scanning
-      await html5QrCode.start(
-        { facingMode: "environment" }, // Use back camera
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
-        },
-        (decodedText, decodedResult) => {
-          // Successfully scanned
-          processQRCode(decodedText);
-        },
-        (errorMessage) => {
-          // Ignore scanning errors (they're frequent during scanning)
+      // Get available cameras
+      let cameraId = null;
+      try {
+        const cameras = await Html5Qrcode.getCameras();
+        if (cameras && cameras.length > 0) {
+          // Prefer back camera (environment facing)
+          const backCamera = cameras.find(
+            cam =>
+              cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('rear')
+          );
+          cameraId = backCamera ? backCamera.id : cameras[0].id;
         }
-      ).catch((err) => {
-        console.error('Error starting scanner:', err);
-        setError('Không thể khởi động camera. Vui lòng kiểm tra quyền truy cập camera.');
-        setIsScanning(false);
-      });
+      } catch (camError) {
+        console.warn('Could not get camera list, using default:', camError);
+      }
+
+      // Start scanning with camera ID or facing mode
+      const cameraConfig = cameraId
+        ? { deviceId: { exact: cameraId } }
+        : { facingMode: 'environment' }; // Fallback to facing mode
+
+      await html5QrCode
+        .start(
+          cameraConfig,
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0,
+            disableFlip: false,
+          },
+          (decodedText, _decodedResult) => {
+            // Successfully scanned
+            processQRCode(decodedText);
+          },
+          _errorMessage => {
+            // Ignore scanning errors (they're frequent during scanning)
+          }
+        )
+        .catch(err => {
+          console.error('Error starting scanner:', err);
+          let errorMsg = 'Không thể khởi động camera. ';
+
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            errorMsg +=
+              'Quyền truy cập camera bị từ chối. Vui lòng cho phép quyền truy cập camera trong cài đặt trình duyệt.';
+          } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+            errorMsg += 'Không tìm thấy camera trên thiết bị.';
+          } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+            errorMsg += 'Camera đang được sử dụng bởi ứng dụng khác.';
+          } else if (err.message && err.message.includes('Permission')) {
+            errorMsg += 'Vui lòng cho phép quyền truy cập camera.';
+          } else {
+            errorMsg += 'Vui lòng kiểm tra quyền truy cập camera.';
+          }
+
+          setError(errorMsg);
+          setIsScanning(false);
+        });
     } catch (err) {
-      setError('Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.');
       console.error('Error accessing camera:', err);
+      setError(
+        err.message || 'Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.'
+      );
       setIsScanning(false);
     }
   };
@@ -90,7 +201,7 @@ function ScanQR() {
     try {
       // Stop scanning first
       await stopScanning();
-      
+
       // Extract token from URL if it's a full URL
       let token = code;
       if (code.includes('token=')) {
@@ -104,57 +215,59 @@ function ScanQR() {
       }
 
       // Detect if device is mobile
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+
       // Get GPS location
       let latitude = null;
       let longitude = null;
       let locationAccuracy = null;
       let locationWarning = null;
-      
+
       try {
         const position = await new Promise((resolve, reject) => {
           if (!navigator.geolocation) {
             reject(new Error('Trình duyệt không hỗ trợ định vị'));
             return;
           }
-          
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            {
-              enableHighAccuracy: true,
-              timeout: 15000,
-              maximumAge: 0
-            }
-          );
+
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0,
+          });
         });
-        
+
         latitude = position.coords.latitude;
         longitude = position.coords.longitude;
         locationAccuracy = position.coords.accuracy; // Accuracy in meters
-        
+
         // Check if accuracy is too low (likely IP geolocation on desktop)
         if (!isMobile && locationAccuracy > 1000) {
-          locationWarning = 'Cảnh báo: Vị trí có thể không chính xác trên máy tính. Vui lòng sử dụng điện thoại để điểm danh chính xác hơn.';
+          locationWarning =
+            'Cảnh báo: Vị trí có thể không chính xác trên máy tính. Vui lòng sử dụng điện thoại để điểm danh chính xác hơn.';
         } else if (locationAccuracy > 500) {
           locationWarning = 'Cảnh báo: Độ chính xác vị trí thấp. Vui lòng kiểm tra lại.';
         }
       } catch (geoError) {
         // If location is required by backend, it will return an error
         if (!isMobile) {
-          locationWarning = 'Máy tính không có GPS. Vui lòng sử dụng điện thoại để điểm danh hoặc liên hệ giáo viên.';
+          locationWarning =
+            'Máy tính không có GPS. Vui lòng sử dụng điện thoại để điểm danh hoặc liên hệ giáo viên.';
         }
         console.warn('Could not get location:', geoError);
       }
-      
+
       // Show warning if on desktop and location is required
       if (locationWarning && !isMobile) {
-        const proceed = window.confirm(`${locationWarning}\n\nBạn có muốn tiếp tục điểm danh không?`);
+        const proceed = window.confirm(
+          `${locationWarning}\n\nBạn có muốn tiếp tục điểm danh không?`
+        );
         if (!proceed) {
           setScanResult({
             success: false,
-            message: 'Điểm danh đã bị hủy. Vui lòng sử dụng điện thoại để điểm danh.'
+            message: 'Điểm danh đã bị hủy. Vui lòng sử dụng điện thoại để điểm danh.',
           });
           return;
         }
@@ -162,7 +275,7 @@ function ScanQR() {
 
       const response = await api.post('/student/attendance/scan', {
         token: token,
-        ...(latitude && longitude ? { latitude, longitude } : {})
+        ...(latitude && longitude ? { latitude, longitude } : {}),
       });
 
       if (response.data.success) {
@@ -173,7 +286,7 @@ function ScanQR() {
             subject: response.data.data?.class_info?.name || 'N/A',
             classCode: response.data.data?.class_info?.class_code || 'N/A',
             status: response.data.data?.status || 'PRESENT',
-            checkinTime: response.data.data?.checkin_time 
+            checkinTime: response.data.data?.checkin_time
               ? new Date(response.data.data.checkin_time).toLocaleString('vi-VN')
               : new Date().toLocaleString('vi-VN'),
           },
@@ -237,7 +350,10 @@ function ScanQR() {
         {isScanning && (
           <div>
             <div className="relative mb-4">
-              <div id="qr-reader" className="w-full rounded-lg border-2 border-blue-500 overflow-hidden"></div>
+              <div
+                id="qr-reader"
+                className="w-full rounded-lg border-2 border-blue-500 overflow-hidden"
+              ></div>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="border-4 border-blue-500 rounded-lg w-64 h-64"></div>
               </div>
@@ -323,25 +439,33 @@ function ScanQR() {
               {scanResult.success && scanResult.classInfo && (
                 <div className="bg-white rounded-lg p-4 mt-4 text-left">
                   <p className="text-gray-700 mb-2">
-                    <span className="font-semibold">Môn học/Lớp:</span> {scanResult.classInfo.subject}
+                    <span className="font-semibold">Môn học/Lớp:</span>{' '}
+                    {scanResult.classInfo.subject}
                   </p>
                   <p className="text-gray-700 mb-2">
                     <span className="font-semibold">Mã lớp:</span> {scanResult.classInfo.classCode}
                   </p>
                   <p className="text-gray-700 mb-2">
                     <span className="font-semibold">Trạng thái:</span>{' '}
-                    <span className={`font-semibold ${
-                      scanResult.classInfo.status === 'PRESENT' ? 'text-green-600' :
-                      scanResult.classInfo.status === 'LATE' ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>
-                      {scanResult.classInfo.status === 'PRESENT' ? '✅ Có mặt' :
-                       scanResult.classInfo.status === 'LATE' ? '⏰ Đi muộn' :
-                       scanResult.classInfo.status}
+                    <span
+                      className={`font-semibold ${
+                        scanResult.classInfo.status === 'PRESENT'
+                          ? 'text-green-600'
+                          : scanResult.classInfo.status === 'LATE'
+                            ? 'text-yellow-600'
+                            : 'text-red-600'
+                      }`}
+                    >
+                      {scanResult.classInfo.status === 'PRESENT'
+                        ? '✅ Có mặt'
+                        : scanResult.classInfo.status === 'LATE'
+                          ? '⏰ Đi muộn'
+                          : scanResult.classInfo.status}
                     </span>
                   </p>
                   <p className="text-gray-700">
-                    <span className="font-semibold">Thời gian điểm danh:</span> {scanResult.classInfo.checkinTime}
+                    <span className="font-semibold">Thời gian điểm danh:</span>{' '}
+                    {scanResult.classInfo.checkinTime}
                   </p>
                 </div>
               )}
@@ -363,10 +487,12 @@ function ScanQR() {
         <div className="mt-8 bg-blue-50 rounded-lg p-4">
           <h3 className="font-semibold text-blue-800 mb-2">Hướng dẫn:</h3>
           <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
+            <li>Cho phép quyền truy cập camera khi trình duyệt yêu cầu</li>
             <li>Đảm bảo camera có đủ ánh sáng</li>
             <li>Đưa mã QR vào khung hình và giữ yên</li>
             <li>Mã QR chỉ có hiệu lực trong thời gian quy định</li>
             <li>Nếu không quét được, có thể nhập mã thủ công</li>
+            <li>Trên điện thoại, đảm bảo truy cập qua HTTPS để camera hoạt động</li>
           </ul>
         </div>
       </div>
