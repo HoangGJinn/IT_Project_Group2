@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
-import { FaQrcode, FaCamera, FaCheckCircle, FaTimesCircle, FaKeyboard } from 'react-icons/fa';
 import api from '../../utils/api';
 
 function ScanQR() {
@@ -13,8 +12,9 @@ function ScanQR() {
   // Check if token is in URL (from QR code scan)
   useEffect(() => {
     const token = searchParams.get('token');
-    if (token) {
-      processQRCode(token);
+    if (token && token.trim()) {
+      // Only process if token is not empty
+      processQRCode(token.trim());
     }
   }, [searchParams]);
 
@@ -184,6 +184,8 @@ function ScanQR() {
 
   const [manualInput, setManualInput] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [pendingToken, setPendingToken] = useState(null);
 
   const handleManualInput = () => {
     setShowManualInput(true);
@@ -214,81 +216,76 @@ function ScanQR() {
         }
       }
 
-      // Detect if device is mobile
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
-      );
-
-      // Get GPS location
+      // Get GPS location - Optional, but if not available, reason is required
       let latitude = null;
       let longitude = null;
       let locationAccuracy = null;
-      let locationWarning = null;
+      let gpsAvailable = false;
 
       try {
-        const position = await new Promise((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error('Trình duyệt không hỗ trợ định vị'));
-            return;
-          }
-
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0,
+        if (navigator.geolocation) {
+          const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0,
+            });
           });
-        });
 
-        latitude = position.coords.latitude;
-        longitude = position.coords.longitude;
-        locationAccuracy = position.coords.accuracy; // Accuracy in meters
+          latitude = position.coords.latitude;
+          longitude = position.coords.longitude;
+          locationAccuracy = position.coords.accuracy;
+          gpsAvailable = true;
 
-        // Check if accuracy is too low (likely IP geolocation on desktop)
-        if (!isMobile && locationAccuracy > 1000) {
-          locationWarning =
-            'Cảnh báo: Vị trí có thể không chính xác trên máy tính. Vui lòng sử dụng điện thoại để điểm danh chính xác hơn.';
-        } else if (locationAccuracy > 500) {
-          locationWarning = 'Cảnh báo: Độ chính xác vị trí thấp. Vui lòng kiểm tra lại.';
+          // Check if accuracy is too low
+          if (locationAccuracy > 500) {
+            const useLowAccuracy = window.confirm(
+              `Cảnh báo: Độ chính xác vị trí thấp (${Math.round(locationAccuracy)}m). Điểm danh có thể thất bại nếu bạn không ở gần giáo viên.\n\nBạn có muốn tiếp tục với GPS này không?`
+            );
+            if (!useLowAccuracy) {
+              gpsAvailable = false;
+              latitude = null;
+              longitude = null;
+            }
+          }
         }
       } catch (geoError) {
-        // If location is required by backend, it will return an error
-        if (!isMobile) {
-          locationWarning =
-            'Máy tính không có GPS. Vui lòng sử dụng điện thoại để điểm danh hoặc liên hệ giáo viên.';
-        }
-        console.warn('Could not get location:', geoError);
+        // GPS not available - will require reason
+        gpsAvailable = false;
+        console.warn('GPS not available:', geoError);
       }
 
-      // Show warning if on desktop and location is required
-      if (locationWarning && !isMobile) {
-        const proceed = window.confirm(
-          `${locationWarning}\n\nBạn có muốn tiếp tục điểm danh không?`
-        );
-        if (!proceed) {
-          setScanResult({
-            success: false,
-            message: 'Điểm danh đã bị hủy. Vui lòng sử dụng điện thoại để điểm danh.',
-          });
-          return;
-        }
+      // If no GPS, show location picker or reason input
+      if (!gpsAvailable) {
+        // Store token and show location picker
+        setPendingToken(token);
+        setShowLocationPicker(true);
+        return;
       }
 
+      // GPS available - proceed with location check
       const response = await api.post('/student/attendance/scan', {
         token: token,
-        ...(latitude && longitude ? { latitude, longitude } : {}),
+        latitude: latitude,
+        longitude: longitude,
       });
 
       if (response.data.success) {
+        const data = response.data.data;
         setScanResult({
           success: true,
           message: response.data.message || 'Điểm danh thành công!',
           classInfo: {
-            subject: response.data.data?.class_info?.name || 'N/A',
-            classCode: response.data.data?.class_info?.class_code || 'N/A',
-            status: response.data.data?.status || 'PRESENT',
-            checkinTime: response.data.data?.checkin_time
-              ? new Date(response.data.data.checkin_time).toLocaleString('vi-VN')
+            subject: data?.class_info?.name || 'N/A',
+            classCode: data?.class_info?.class_code || 'N/A',
+            status: data?.status || 'PRESENT',
+            checkinTime: data?.checkin_time
+              ? new Date(data.checkin_time).toLocaleString('vi-VN')
               : new Date().toLocaleString('vi-VN'),
+            is_valid: data?.is_valid,
+            no_gps_reason: data?.no_gps_reason,
+            latitude: data?.latitude,
+            longitude: data?.longitude,
           },
         });
       } else {
@@ -299,11 +296,127 @@ function ScanQR() {
       }
     } catch (error) {
       console.error('Scan QR error:', error);
+      const errorMessage =
+        error.response?.data?.message || error.message || 'Mã QR không hợp lệ hoặc đã hết hạn';
       setScanResult({
         success: false,
-        message: error.response?.data?.message || 'Mã QR không hợp lệ hoặc đã hết hạn',
+        message: errorMessage,
       });
+      setError(errorMessage);
     }
+  };
+
+  // Handle location selected from LocationPicker
+  const handleLocationSelected = async location => {
+    if (!pendingToken) {
+      return;
+    }
+
+    setShowLocationPicker(false);
+    const token = pendingToken;
+    setPendingToken(null);
+
+    try {
+      const response = await api.post('/student/attendance/scan', {
+        token: token,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      });
+
+      if (response.data.success) {
+        const data = response.data.data;
+        setScanResult({
+          success: true,
+          message: response.data.message || 'Điểm danh thành công!',
+          classInfo: {
+            subject: data?.class_info?.name || 'N/A',
+            classCode: data?.class_info?.class_code || 'N/A',
+            status: data?.status || 'PRESENT',
+            checkinTime: data?.checkin_time
+              ? new Date(data.checkin_time).toLocaleString('vi-VN')
+              : new Date().toLocaleString('vi-VN'),
+            is_valid: data?.is_valid,
+            no_gps_reason: data?.no_gps_reason,
+            latitude: data?.latitude,
+            longitude: data?.longitude,
+          },
+        });
+      } else {
+        setScanResult({
+          success: false,
+          message: response.data.message || 'Điểm danh thất bại',
+        });
+      }
+    } catch (error) {
+      console.error('Scan QR error:', error);
+      const errorMessage =
+        error.response?.data?.message || error.message || 'Mã QR không hợp lệ hoặc đã hết hạn';
+      setScanResult({
+        success: false,
+        message: errorMessage,
+      });
+      setError(errorMessage);
+    }
+  };
+
+  const handleLocationPickerCancel = () => {
+    // If user cancels, ask for reason
+    setShowLocationPicker(false);
+    const reason = window.prompt(
+      'Bạn không có GPS hoặc GPS không khả dụng. Vui lòng nhập lý do hợp lệ (ví dụ: "Điện thoại không có GPS", "GPS bị lỗi", "Đang ở trong nhà GPS yếu", v.v.):\n\nLý do:'
+    );
+
+    if (!reason || reason.trim().length === 0) {
+      setScanResult({
+        success: false,
+        message: 'Vui lòng cung cấp lý do khi không thể sử dụng GPS để điểm danh.',
+      });
+      setPendingToken(null);
+      return;
+    }
+
+    // Use reason for attendance
+    if (pendingToken) {
+      api
+        .post('/student/attendance/scan', {
+          token: pendingToken,
+          no_gps_reason: reason.trim(),
+        })
+        .then(response => {
+          if (response.data.success) {
+            const data = response.data.data;
+            setScanResult({
+              success: true,
+              message:
+                response.data.message ||
+                'Điểm danh thành công! Lý do của bạn đã được ghi nhận và sẽ được giáo viên xem xét.',
+              classInfo: {
+                subject: data?.class_info?.name || 'N/A',
+                classCode: data?.class_info?.class_code || 'N/A',
+                status: data?.status || 'PRESENT',
+                checkinTime: data?.checkin_time
+                  ? new Date(data.checkin_time).toLocaleString('vi-VN')
+                  : new Date().toLocaleString('vi-VN'),
+                is_valid: data?.is_valid,
+                no_gps_reason: data?.no_gps_reason,
+              },
+            });
+          } else {
+            setScanResult({
+              success: false,
+              message: response.data.message || 'Điểm danh thất bại',
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Scan QR error:', error);
+          setScanResult({
+            success: false,
+            message: error.response?.data?.message || 'Mã QR không hợp lệ hoặc đã hết hạn',
+          });
+        });
+    }
+    setPendingToken(null);
   };
 
   useEffect(() => {
@@ -463,10 +576,78 @@ function ScanQR() {
                           : scanResult.classInfo.status}
                     </span>
                   </p>
-                  <p className="text-gray-700">
+                  <p className="text-gray-700 mb-2">
                     <span className="font-semibold">Thời gian điểm danh:</span>{' '}
                     {scanResult.classInfo.checkinTime}
                   </p>
+
+                  {/* Validation Status */}
+                  {(() => {
+                    const isValid = scanResult.classInfo.is_valid;
+                    // Convert to number for comparison (handle boolean, string, or number)
+                    const isValidNum =
+                      isValid === null || isValid === undefined ? null : Number(isValid);
+
+                    if (isValidNum === null) {
+                      return (
+                        <div className="pt-2 border-t border-gray-200">
+                          <p className="text-gray-700 mb-2">
+                            <span className="font-semibold">Đánh giá:</span>{' '}
+                            <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-semibold">
+                              ⏳ Chờ giáo viên đánh giá
+                            </span>
+                          </p>
+                          {scanResult.classInfo.no_gps_reason && (
+                            <div className="mt-2 bg-yellow-50 p-3 rounded border border-yellow-200">
+                              <p className="text-sm text-yellow-800">
+                                <span className="font-semibold">Lý do không có GPS:</span>{' '}
+                                {scanResult.classInfo.no_gps_reason}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } else if (isValidNum === 1) {
+                      return (
+                        <div className="pt-2 border-t border-gray-200">
+                          <p className="text-gray-700 mb-2">
+                            <span className="font-semibold">Đánh giá:</span>{' '}
+                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">
+                              ✅ Hợp lệ
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    } else {
+                      return (
+                        <div className="pt-2 border-t border-gray-200">
+                          <p className="text-gray-700 mb-2">
+                            <span className="font-semibold">Đánh giá:</span>{' '}
+                            <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+                              ❌ Không hợp lệ (Ngoài phạm vi cho phép)
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    }
+                  })()}
+
+                  {/* GPS Location */}
+                  {scanResult.classInfo.latitude && scanResult.classInfo.longitude && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <p className="text-gray-700 mb-1">
+                        <span className="font-semibold">📍 Vị trí điểm danh:</span>
+                      </p>
+                      <a
+                        href={`https://www.google.com/maps?q=${scanResult.classInfo.latitude},${scanResult.classInfo.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline text-sm"
+                      >
+                        🗺️ Xem trên Google Maps
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -496,6 +677,14 @@ function ScanQR() {
           </ul>
         </div>
       </div>
+
+      {/* Location Picker Modal */}
+      {showLocationPicker && (
+        <LocationPicker
+          onLocationSelected={handleLocationSelected}
+          onCancel={handleLocationPickerCancel}
+        />
+      )}
     </div>
   );
 }

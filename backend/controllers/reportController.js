@@ -1,4 +1,12 @@
-const { AttendanceRecord, Student, User, Class, Session, AttendanceSession, Enrollment } = require('../models');
+const {
+  AttendanceRecord,
+  Student,
+  User,
+  Class,
+  Session,
+  AttendanceSession,
+  Enrollment,
+} = require('../models');
 const { Op } = require('sequelize');
 
 const getAttendanceReport = async (req, res) => {
@@ -8,7 +16,7 @@ const getAttendanceReport = async (req, res) => {
     if (!school_year || !semester) {
       return res.status(400).json({
         success: false,
-        message: 'school_year and semester are required'
+        message: 'school_year and semester are required',
       });
     }
 
@@ -25,8 +33,8 @@ const getAttendanceReport = async (req, res) => {
       sessions = await Session.findAll({
         where: {
           class_id: { [Op.in]: classIds },
-          status: 'FINISHED'
-        }
+          status: 'FINISHED',
+        },
       });
     }
 
@@ -37,8 +45,8 @@ const getAttendanceReport = async (req, res) => {
     if (sessionIds.length > 0) {
       attendanceSessions = await AttendanceSession.findAll({
         where: {
-          session_id: { [Op.in]: sessionIds }
-        }
+          session_id: { [Op.in]: sessionIds },
+        },
       });
     }
 
@@ -48,17 +56,21 @@ const getAttendanceReport = async (req, res) => {
     if (attendanceSessionIds.length > 0) {
       records = await AttendanceRecord.findAll({
         where: {
-          attendance_session_id: { [Op.in]: attendanceSessionIds }
+          attendance_session_id: { [Op.in]: attendanceSessionIds },
         },
-        include: [{
-          model: Student,
-          as: 'student',
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['full_name']
-          }]
-        }]
+        include: [
+          {
+            model: Student,
+            as: 'student',
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['full_name'],
+              },
+            ],
+          },
+        ],
       });
     }
 
@@ -67,6 +79,12 @@ const getAttendanceReport = async (req, res) => {
     const onTime = records.filter(r => r.status === 'PRESENT').length;
     const late = records.filter(r => r.status === 'LATE').length;
     const absent = records.filter(r => r.status === 'ABSENT').length;
+
+    // Calculate validation stats
+    const validRecords = records.filter(r => r.is_valid === 1).length;
+    const invalidRecords = records.filter(r => r.is_valid === 0).length;
+    const pendingRecords = records.filter(r => r.is_valid === null).length;
+    const recordsWithValidation = records.filter(r => r.is_valid !== null).length;
 
     // Group by student
     const studentMap = new Map();
@@ -78,13 +96,24 @@ const getAttendanceReport = async (req, res) => {
           student_code: record.student.student_code,
           full_name: record.student.user.full_name,
           total: 0,
-          attended: 0
+          attended: 0,
+          valid: 0,
+          invalid: 0,
+          pending: 0,
         });
       }
       const student = studentMap.get(studentId);
       student.total++;
       if (record.status === 'PRESENT' || record.status === 'LATE') {
         student.attended++;
+      }
+      // Count validation status
+      if (record.is_valid === 1) {
+        student.valid++;
+      } else if (record.is_valid === 0) {
+        student.invalid++;
+      } else if (record.is_valid === null) {
+        student.pending++;
       }
     });
 
@@ -93,7 +122,12 @@ const getAttendanceReport = async (req, res) => {
       student_code: s.student_code,
       full_name: s.full_name,
       total_sessions: `${s.attended}/${s.total}`,
-      attendance_rate: s.total > 0 ? ((s.attended / s.total) * 100).toFixed(0) + '%' : '0%'
+      attendance_rate: s.total > 0 ? ((s.attended / s.total) * 100).toFixed(0) + '%' : '0%',
+      valid_count: s.valid,
+      invalid_count: s.invalid,
+      pending_count: s.pending,
+      valid_rate: s.attended > 0 ? ((s.valid / s.attended) * 100).toFixed(0) + '%' : '0%',
+      invalid_rate: s.attended > 0 ? ((s.invalid / s.attended) * 100).toFixed(0) + '%' : '0%',
     }));
 
     res.json({
@@ -106,16 +140,28 @@ const getAttendanceReport = async (req, res) => {
           on_time_count: onTime,
           late_count: late,
           absent_count: absent,
-          total_records: total
+          total_records: total,
+          valid:
+            recordsWithValidation > 0
+              ? Math.round((validRecords / recordsWithValidation) * 100)
+              : 0,
+          invalid:
+            recordsWithValidation > 0
+              ? Math.round((invalidRecords / recordsWithValidation) * 100)
+              : 0,
+          pending: total > 0 ? Math.round((pendingRecords / total) * 100) : 0,
+          valid_count: validRecords,
+          invalid_count: invalidRecords,
+          pending_count: pendingRecords,
         },
-        students
-      }
+        students,
+      },
     });
   } catch (error) {
     console.error('Get attendance report error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -129,7 +175,7 @@ const getClassReport = async (req, res) => {
     if (!classData) {
       return res.status(404).json({
         success: false,
-        message: 'Class not found'
+        message: 'Class not found',
       });
     }
 
@@ -137,9 +183,9 @@ const getClassReport = async (req, res) => {
     const sessions = await Session.findAll({
       where: {
         class_id: classId,
-        status: { [Op.in]: ['FINISHED', 'ONGOING'] }
+        status: { [Op.in]: ['FINISHED', 'ONGOING'] },
       },
-      order: [['date', 'ASC']]
+      order: [['date', 'ASC']],
     });
 
     const sessionIds = sessions.map(s => s.session_id);
@@ -149,8 +195,8 @@ const getClassReport = async (req, res) => {
     if (sessionIds.length > 0) {
       attendanceSessions = await AttendanceSession.findAll({
         where: {
-          session_id: { [Op.in]: sessionIds }
-        }
+          session_id: { [Op.in]: sessionIds },
+        },
       });
     }
 
@@ -160,43 +206,54 @@ const getClassReport = async (req, res) => {
     if (attendanceSessionIds.length > 0) {
       records = await AttendanceRecord.findAll({
         where: {
-          attendance_session_id: { [Op.in]: attendanceSessionIds }
+          attendance_session_id: { [Op.in]: attendanceSessionIds },
         },
-        include: [{
-          model: Student,
-          as: 'student',
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['full_name']
-          }]
-        }, {
-          model: AttendanceSession,
-          as: 'attendanceSession',
-          include: [{
-            model: Session,
-            as: 'session',
-            attributes: ['session_id', 'date', 'status']
-          }]
-        }]
+        include: [
+          {
+            model: Student,
+            as: 'student',
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['full_name'],
+              },
+            ],
+          },
+          {
+            model: AttendanceSession,
+            as: 'attendanceSession',
+            include: [
+              {
+                model: Session,
+                as: 'session',
+                attributes: ['session_id', 'date', 'status'],
+              },
+            ],
+          },
+        ],
       });
     }
-    
+
     // Also need to calculate total sessions per student (including sessions without attendance records)
     // Get all enrolled students
     const enrollments = await Enrollment.findAll({
       where: { class_id: classId, status: 'ENROLLED' },
-      include: [{
-        model: Student,
-        as: 'student',
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['full_name']
-        }]
-      }]
+      include: [
+        {
+          model: Student,
+          as: 'student',
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['full_name'],
+            },
+          ],
+        },
+      ],
     });
-    
+
     // Calculate total sessions per student (FINISHED + ONGOING with attendance)
     const studentTotalSessions = new Map();
     enrollments.forEach(enrollment => {
@@ -206,8 +263,7 @@ const getClassReport = async (req, res) => {
       // Count distinct ONGOING sessions where this student has attendance record
       const ongoingSessionIds = new Set();
       records.forEach(r => {
-        if (r.student_id === studentId && 
-            r.attendanceSession?.session?.status === 'ONGOING') {
+        if (r.student_id === studentId && r.attendanceSession?.session?.status === 'ONGOING') {
           ongoingSessionIds.add(r.attendanceSession.session.session_id);
         }
       });
@@ -220,9 +276,15 @@ const getClassReport = async (req, res) => {
     const late = records.filter(r => r.status === 'LATE').length;
     const absent = records.filter(r => r.status === 'ABSENT').length;
 
+    // Calculate validation stats
+    const validRecords = records.filter(r => r.is_valid === 1).length;
+    const invalidRecords = records.filter(r => r.is_valid === 0).length;
+    const pendingRecords = records.filter(r => r.is_valid === null).length;
+    const recordsWithValidation = records.filter(r => r.is_valid !== null).length;
+
     // Group by student
     const studentMap = new Map();
-    
+
     // Initialize all enrolled students
     enrollments.forEach(enrollment => {
       const studentId = enrollment.student_id;
@@ -234,11 +296,14 @@ const getClassReport = async (req, res) => {
           total: studentTotalSessions.get(studentId) || 0,
           onTime: 0,
           late: 0,
-          absent: 0
+          absent: 0,
+          valid: 0,
+          invalid: 0,
+          pending: 0,
         });
       }
     });
-    
+
     // Count attendance records
     records.forEach(record => {
       const studentId = record.student_id;
@@ -250,7 +315,10 @@ const getClassReport = async (req, res) => {
           total: studentTotalSessions.get(studentId) || 0,
           onTime: 0,
           late: 0,
-          absent: 0
+          absent: 0,
+          valid: 0,
+          invalid: 0,
+          pending: 0,
         });
       }
       const student = studentMap.get(studentId);
@@ -261,18 +329,34 @@ const getClassReport = async (req, res) => {
       } else if (record.status === 'ABSENT') {
         student.absent++;
       }
+      // Count validation status
+      if (record.is_valid === 1) {
+        student.valid++;
+      } else if (record.is_valid === 0) {
+        student.invalid++;
+      } else if (record.is_valid === null) {
+        student.pending++;
+      }
     });
 
-    const students = Array.from(studentMap.values()).map(s => ({
-      student_id: s.student_id,
-      student_code: s.student_code,
-      full_name: s.full_name,
-      total_sessions: s.total,
-      on_time: s.onTime,
-      late: s.late,
-      absent: s.absent,
-      attendance_rate: s.total > 0 ? ((s.onTime + s.late) / s.total * 100).toFixed(1) + '%' : '0%'
-    }));
+    const students = Array.from(studentMap.values()).map(s => {
+      const attended = s.onTime + s.late;
+      return {
+        student_id: s.student_id,
+        student_code: s.student_code,
+        full_name: s.full_name,
+        total_sessions: s.total,
+        on_time: s.onTime,
+        late: s.late,
+        absent: s.absent,
+        attendance_rate: s.total > 0 ? ((attended / s.total) * 100).toFixed(1) + '%' : '0%',
+        valid_count: s.valid,
+        invalid_count: s.invalid,
+        pending_count: s.pending,
+        valid_rate: attended > 0 ? ((s.valid / attended) * 100).toFixed(1) + '%' : '0%',
+        invalid_rate: attended > 0 ? ((s.invalid / attended) * 100).toFixed(1) + '%' : '0%',
+      };
+    });
 
     res.json({
       success: true,
@@ -282,7 +366,7 @@ const getClassReport = async (req, res) => {
           class_code: classData.class_code,
           name: classData.name,
           school_year: classData.school_year,
-          semester: classData.semester
+          semester: classData.semester,
         },
         overview: {
           total_sessions: sessions.length,
@@ -292,16 +376,28 @@ const getClassReport = async (req, res) => {
           absent: total > 0 ? Math.round((absent / total) * 100) : 0,
           on_time_count: onTime,
           late_count: late,
-          absent_count: absent
+          absent_count: absent,
+          valid:
+            recordsWithValidation > 0
+              ? Math.round((validRecords / recordsWithValidation) * 100)
+              : 0,
+          invalid:
+            recordsWithValidation > 0
+              ? Math.round((invalidRecords / recordsWithValidation) * 100)
+              : 0,
+          pending: total > 0 ? Math.round((pendingRecords / total) * 100) : 0,
+          valid_count: validRecords,
+          invalid_count: invalidRecords,
+          pending_count: pendingRecords,
         },
-        students
-      }
+        students,
+      },
     });
   } catch (error) {
     console.error('Get class report error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -311,13 +407,13 @@ const exportReport = async (req, res) => {
     // TODO: Implement export to Excel/PDF
     res.status(501).json({
       success: false,
-      message: 'Export not implemented yet'
+      message: 'Export not implemented yet',
     });
   } catch (error) {
     console.error('Export report error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -325,6 +421,5 @@ const exportReport = async (req, res) => {
 module.exports = {
   getAttendanceReport,
   getClassReport,
-  exportReport
+  exportReport,
 };
-

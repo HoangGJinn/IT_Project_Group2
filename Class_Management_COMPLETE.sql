@@ -194,6 +194,9 @@ CREATE TABLE attendance_sessions (
   open_at   DATETIME NOT NULL,
   close_at  DATETIME NULL,
   late_after_minutes SMALLINT NULL,
+  teacher_latitude DECIMAL(10, 8) NULL,
+  teacher_longitude DECIMAL(11, 8) NULL,
+  location_radius INT DEFAULT 10 COMMENT 'Bán kính cho phép điểm danh (mét), mặc định 10m',
   CONSTRAINT fk_att_sess_session FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
@@ -223,6 +226,8 @@ CREATE TABLE attendance_records (
   note VARCHAR(255) NULL,
   latitude DECIMAL(10, 8) NULL COMMENT 'Vĩ độ nơi điểm danh',
   longitude DECIMAL(11, 8) NULL COMMENT 'Kinh độ nơi điểm danh',
+  no_gps_reason TEXT NULL COMMENT 'Lý do không có GPS khi điểm danh',
+  is_valid TINYINT(1) DEFAULT 1 COMMENT 'Điểm danh hợp lệ (1) hay không hợp lệ (0), NULL nếu chưa đánh giá',
   UNIQUE KEY uq_att_rec (attendance_session_id, student_id),
   KEY idx_att_rec_session (attendance_session_id),
   KEY idx_att_rec_student (student_id),

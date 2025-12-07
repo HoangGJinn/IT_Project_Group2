@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { QRCodeSVG } from 'qrcode.react';
 
 function ClassDetail() {
   const { id } = useParams();
@@ -10,11 +9,12 @@ function ClassDetail() {
   const [classInfo, setClassInfo] = useState(null);
   const [selectedSessionForQR, setSelectedSessionForQR] = useState(null);
   const [showQRDurationModal, setShowQRDurationModal] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [pendingQRParams, setPendingQRParams] = useState(null);
   const [students, setStudents] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [studentCode, setStudentCode] = useState('');
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -31,16 +31,16 @@ function ClassDetail() {
   const [allAttendanceRecords, setAllAttendanceRecords] = useState([]);
   const [allAttendanceLoading, setAllAttendanceLoading] = useState(false);
   const [attendanceData, setAttendanceData] = useState(null);
-  
+
   // Class Report
   const [classReport, setClassReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
-  
+
   // Students list improvements
   const [studentSearch, setStudentSearch] = useState('');
   const [sortField, setSortField] = useState('full_name');
   const [sortOrder, setSortOrder] = useState('asc');
-  
+
   // History tab improvements
   const [showCreateSessionModal, setShowCreateSessionModal] = useState(false);
   const [newSession, setNewSession] = useState({
@@ -48,9 +48,9 @@ function ClassDetail() {
     start_time: '',
     end_time: '',
     room: '',
-    topic: ''
+    topic: '',
   });
-  
+
   // Settings tab improvements
   const [settings, setSettings] = useState({
     name: '',
@@ -64,16 +64,19 @@ function ClassDetail() {
     image_url: '',
     default_duration_min: '',
     default_late_after_min: '',
-    default_method: 'QR'
+    default_method: 'QR',
   });
-  
+
   // QR Code Modal
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrData, setQrData] = useState({
     token: '',
     url: '',
     expiresAt: null,
-    sessionInfo: null
+    locationRadius: 10,
+    teacherLatitude: null,
+    teacherLongitude: null,
+    sessionInfo: null,
   });
 
   useEffect(() => {
@@ -98,12 +101,12 @@ function ClassDetail() {
         planned_sessions: classInfo.planned_sessions || '',
         schedule_days: classInfo.schedule_days || '',
         schedule_periods: classInfo.schedule_periods || '',
-                        start_date: classInfo.start_date || '',
-                        end_date: classInfo.end_date || '',
-                        image_url: classInfo.image_url || '',
-                        default_duration_min: classInfo.default_duration_min || '90',
-                        default_late_after_min: classInfo.default_late_after_min || '15',
-                        default_method: classInfo.default_method || 'QR'
+        start_date: classInfo.start_date || '',
+        end_date: classInfo.end_date || '',
+        image_url: classInfo.image_url || '',
+        default_duration_min: classInfo.default_duration_min || '90',
+        default_late_after_min: classInfo.default_late_after_min || '15',
+        default_method: classInfo.default_method || 'QR',
       });
     }
   }, [id, activeTab, classInfo]);
@@ -150,16 +153,35 @@ function ClassDetail() {
     }
   };
 
-  const handleCreateQR = async (lateAfterMinutes) => {
+  const handleCreateQR = async (lateAfterMinutes, locationRadius) => {
     if (!selectedSessionForQR) {
       return;
     }
 
+    // Store QR parameters and show location picker
+    setPendingQRParams({ lateAfterMinutes, locationRadius });
+    setShowLocationPicker(true);
+  };
+
+  // Handle location selected from LocationPicker
+  const handleLocationSelected = async location => {
+    if (!selectedSessionForQR || !pendingQRParams) {
+      return;
+    }
+
+    setShowLocationPicker(false);
+
     try {
-      const response = await api.post(`/sessions/${selectedSessionForQR.session_id}/attendance/start`, {
-        method: 'QR',
-        late_after_minutes: parseInt(lateAfterMinutes),
-      });
+      const response = await api.post(
+        `/sessions/${selectedSessionForQR.session_id}/attendance/start`,
+        {
+          method: 'QR',
+          late_after_minutes: parseInt(pendingQRParams.lateAfterMinutes),
+          latitude: location.latitude,
+          longitude: location.longitude,
+          location_radius: parseInt(pendingQRParams.locationRadius) || 10,
+        }
+      );
 
       if (response.data.success) {
         const qrToken = response.data.data.qr_token;
@@ -173,16 +195,20 @@ function ClassDetail() {
           token: qrToken,
           url: qrURL,
           expiresAt: response.data.data.expires_at,
+          locationRadius: pendingQRParams.locationRadius || 10,
+          teacherLatitude: response.data.data.teacher_latitude || location.latitude,
+          teacherLongitude: response.data.data.teacher_longitude || location.longitude,
           sessionInfo: {
             date: selectedSessionForQR.date,
             time: `${selectedSessionForQR.start_time}${selectedSessionForQR.end_time ? ` - ${selectedSessionForQR.end_time}` : ''}`,
             room: selectedSessionForQR.room || 'Chưa có',
-            topic: selectedSessionForQR.topic || 'Chưa có'
-          }
+            topic: selectedSessionForQR.topic || 'Chưa có',
+          },
         });
         setShowQRModal(true);
         setShowQRDurationModal(false);
         setSelectedSessionForQR(null);
+        setPendingQRParams(null);
         fetchSessions(); // Refresh sessions to show updated QR status
       }
     } catch (error) {
@@ -191,12 +217,17 @@ function ClassDetail() {
     }
   };
 
-  const handleOpenQRModal = (session) => {
+  const handleLocationPickerCancel = () => {
+    setShowLocationPicker(false);
+    setPendingQRParams(null);
+  };
+
+  const handleOpenQRModal = session => {
     setSelectedSessionForQR(session);
     setShowQRDurationModal(true);
   };
 
-  const handleStartSession = async (session) => {
+  const handleStartSession = async session => {
     try {
       const response = await api.post(`/sessions/${session.session_id}/start`);
       if (response.data.success) {
@@ -209,15 +240,15 @@ function ClassDetail() {
     }
   };
 
-  const handleViewSessionDetail = (session) => {
+  const handleViewSessionDetail = session => {
     setSelectedSessionDetail(session);
     setShowSessionDetailModal(true);
   };
 
-  const fetchAttendanceRecords = async (attendanceSessionId) => {
+  const fetchAttendanceRecords = async attendanceSessionId => {
     try {
       setAttendanceLoading(true);
-      const response = await api.get(`/attendance/${attendanceSessionId}`);
+      const response = await api.get(`/attendance/sessions/${attendanceSessionId}`);
       if (response.data.success) {
         setAttendanceRecords(response.data.data || []);
       }
@@ -245,14 +276,14 @@ function ClassDetail() {
     }
   };
 
-  const handleEditSession = (session) => {
+  const handleEditSession = session => {
     setSelectedSessionDetail(session);
     setShowEditSessionModal(true);
   };
 
   const handleUpdateSession = async () => {
     if (!selectedSessionDetail) return;
-    
+
     try {
       // Format date to YYYY-MM-DD if it's not already in that format
       let formattedDate = selectedSessionDetail.date;
@@ -271,9 +302,9 @@ function ClassDetail() {
         start_time: selectedSessionDetail.start_time,
         end_time: selectedSessionDetail.end_time || null,
         room: selectedSessionDetail.room || null,
-        topic: selectedSessionDetail.topic || null
+        topic: selectedSessionDetail.topic || null,
       });
-      
+
       if (response.data.success) {
         alert('Cập nhật buổi học thành công');
         setShowEditSessionModal(false);
@@ -288,7 +319,7 @@ function ClassDetail() {
 
   const handleDeleteSession = async () => {
     if (!selectedSessionDetail) return;
-    
+
     try {
       const response = await api.delete(`/sessions/${selectedSessionDetail.session_id}`);
       if (response.data.success) {
@@ -306,7 +337,7 @@ function ClassDetail() {
 
   const fetchClassReport = async () => {
     if (!id) return;
-    
+
     try {
       setReportLoading(true);
       const response = await api.get(`/reports/classes/${id}`);
@@ -334,7 +365,21 @@ function ClassDetail() {
     }
 
     const csvContent = [
-      ['STT', 'Họ và tên', 'MSVV', 'Tổng số buổi', 'Đúng giờ', 'Muộn', 'Vắng', 'Tỉ lệ chuyên cần'],
+      [
+        'STT',
+        'Họ và tên',
+        'MSVV',
+        'Tổng số buổi',
+        'Đúng giờ',
+        'Muộn',
+        'Vắng',
+        'Tỉ lệ chuyên cần',
+        'Hợp lệ',
+        'Tỉ lệ hợp lệ',
+        'Không hợp lệ',
+        'Tỉ lệ không hợp lệ',
+        'Chờ đánh giá',
+      ],
       ...classReport.students.map((student, index) => [
         index + 1,
         student.full_name,
@@ -343,7 +388,12 @@ function ClassDetail() {
         student.on_time || 0,
         student.late || 0,
         student.absent || 0,
-        student.attendance_rate
+        student.attendance_rate,
+        student.valid_count || 0,
+        student.valid_rate || '0%',
+        student.invalid_count || 0,
+        student.invalid_rate || '0%',
+        student.pending_count || 0,
       ]),
     ]
       .map(row => row.join(','))
@@ -455,12 +505,6 @@ function ClassDetail() {
     }
   };
 
-  const openMaterialModal = sessionId => {
-    setSelectedSessionId(sessionId);
-    setShowMaterialModal(true);
-  };
-
-
   // Handle create session
   const handleCreateSession = async () => {
     if (!newSession.date || !newSession.start_time) {
@@ -485,15 +529,17 @@ function ClassDetail() {
   // Handle delete class
   const handleDeleteClass = async () => {
     if (!classInfo) return;
-    
+
     const confirmMessage = `Bạn có chắc chắn muốn xóa lớp học "${classInfo.class_code}"?\n\nHành động này không thể hoàn tác. Tất cả dữ liệu liên quan sẽ bị xóa:\n- Tất cả buổi học\n- Tất cả bản ghi điểm danh\n- Tất cả sinh viên đã đăng ký\n- Tất cả tài liệu học tập`;
-    
+
     if (!window.confirm(confirmMessage)) {
       return;
     }
 
     // Double confirmation
-    const secondConfirm = window.confirm('Cảnh báo: Đây là lần xác nhận cuối cùng. Bạn có chắc chắn muốn xóa lớp học này?');
+    const secondConfirm = window.confirm(
+      'Cảnh báo: Đây là lần xác nhận cuối cùng. Bạn có chắc chắn muốn xóa lớp học này?'
+    );
     if (!secondConfirm) {
       return;
     }
@@ -520,9 +566,13 @@ function ClassDetail() {
         start_date: settings.start_date || null,
         end_date: settings.end_date || null,
         image_url: settings.image_url || null,
-        default_duration_min: settings.default_duration_min ? parseInt(settings.default_duration_min) : null,
-        default_late_after_min: settings.default_late_after_min ? parseInt(settings.default_late_after_min) : null,
-        default_method: settings.default_method
+        default_duration_min: settings.default_duration_min
+          ? parseInt(settings.default_duration_min)
+          : null,
+        default_late_after_min: settings.default_late_after_min
+          ? parseInt(settings.default_late_after_min)
+          : null,
+        default_method: settings.default_method,
       });
 
       if (response.data.success) {
@@ -534,7 +584,6 @@ function ClassDetail() {
       alert(error.response?.data?.message || 'Cập nhật thất bại');
     }
   };
-
 
   return (
     <div>
@@ -676,24 +725,38 @@ function ClassDetail() {
                         />
                       </th>
                       <th className="text-left py-3 px-4">STT</th>
-                      <th className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100" onClick={() => setSortField('full_name')}>
+                      <th
+                        className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100"
+                        onClick={() => setSortField('full_name')}
+                      >
                         Họ và tên {sortField === 'full_name' && (sortOrder === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100" onClick={() => setSortField('student_code')}>
+                      <th
+                        className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100"
+                        onClick={() => setSortField('student_code')}
+                      >
                         MSVV {sortField === 'student_code' && (sortOrder === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100" onClick={() => setSortField('total_sessions')}>
-                        Tổng số buổi {sortField === 'total_sessions' && (sortOrder === 'asc' ? '↑' : '↓')}
+                      <th
+                        className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100"
+                        onClick={() => setSortField('total_sessions')}
+                      >
+                        Tổng số buổi{' '}
+                        {sortField === 'total_sessions' && (sortOrder === 'asc' ? '↑' : '↓')}
                       </th>
-                      <th className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100" onClick={() => setSortField('attendance_rate')}>
-                        Tỉ lệ chuyên cần {sortField === 'attendance_rate' && (sortOrder === 'asc' ? '↑' : '↓')}
+                      <th
+                        className="text-left py-3 px-4 cursor-pointer hover:bg-gray-100"
+                        onClick={() => setSortField('attendance_rate')}
+                      >
+                        Tỉ lệ chuyên cần{' '}
+                        {sortField === 'attendance_rate' && (sortOrder === 'asc' ? '↑' : '↓')}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {(() => {
                       // Filter and sort students
-                      let filteredStudents = students.filter(student => {
+                      const filteredStudents = students.filter(student => {
                         const searchLower = studentSearch.toLowerCase();
                         return (
                           student.full_name.toLowerCase().includes(searchLower) ||
@@ -705,13 +768,13 @@ function ClassDetail() {
                       filteredStudents.sort((a, b) => {
                         let aVal = a[sortField];
                         let bVal = b[sortField];
-                        
+
                         // Handle attendance_rate (string like "85.5%")
                         if (sortField === 'attendance_rate') {
                           aVal = parseFloat(aVal) || 0;
                           bVal = parseFloat(bVal) || 0;
                         }
-                        
+
                         if (sortOrder === 'asc') {
                           return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
                         } else {
@@ -747,11 +810,15 @@ function ClassDetail() {
                           <td className="py-3 px-4 font-mono">{student.student_code}</td>
                           <td className="py-3 px-4 text-center">{student.total_sessions || 0}</td>
                           <td className="py-3 px-4">
-                            <span className={`font-semibold ${
-                              parseFloat(student.attendance_rate) >= 80 ? 'text-green-600' :
-                              parseFloat(student.attendance_rate) >= 60 ? 'text-yellow-600' :
-                              'text-red-600'
-                            }`}>
+                            <span
+                              className={`font-semibold ${
+                                parseFloat(student.attendance_rate) >= 80
+                                  ? 'text-green-600'
+                                  : parseFloat(student.attendance_rate) >= 60
+                                    ? 'text-yellow-600'
+                                    : 'text-red-600'
+                              }`}
+                            >
                               {student.attendance_rate || '0%'}
                             </span>
                           </td>
@@ -763,10 +830,14 @@ function ClassDetail() {
               </div>
               <div className="mt-4 text-sm text-gray-600">
                 Tổng số: {students.length} sinh viên
-                {studentSearch && ` (${students.filter(s => 
-                  s.full_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                  s.student_code.toLowerCase().includes(studentSearch.toLowerCase())
-                ).length} kết quả)`}
+                {studentSearch &&
+                  ` (${
+                    students.filter(
+                      s =>
+                        s.full_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                        s.student_code.toLowerCase().includes(studentSearch.toLowerCase())
+                    ).length
+                  } kết quả)`}
               </div>
               <div className="mt-6 flex justify-end gap-4">
                 <button
@@ -805,205 +876,227 @@ function ClassDetail() {
 
               {/* Upcoming Sessions - Smart Layout */}
               <div>
-                  {(() => {
-                    const today = new Date().toISOString().split('T')[0];
-                    const now = new Date();
-                    const upcomingSessions = sessions
-                      .filter(s => {
-                        if (s.status === 'CANCELLED') return false;
-                        const sessionStatus = s.realTimeStatus || s.status;
-                        return sessionStatus === 'UPCOMING' || sessionStatus === 'ONGOING' || 
-                               (s.date >= today && sessionStatus !== 'FINISHED');
-                      })
-                      .sort((a, b) => {
-                        if (a.date !== b.date) return a.date.localeCompare(b.date);
-                        return (a.start_time || '').localeCompare(b.start_time || '');
-                      });
-
-                    if (upcomingSessions.length === 0) {
+                {(() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  const upcomingSessions = sessions
+                    .filter(s => {
+                      if (s.status === 'CANCELLED') return false;
+                      const sessionStatus = s.realTimeStatus || s.status;
                       return (
-                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-8 text-center border-2 border-dashed border-blue-200">
-                          <div className="text-4xl mb-3">📅</div>
-                          <p className="text-gray-700 font-medium text-lg mb-1">Chưa có buổi học sắp tới</p>
-                          <p className="text-gray-500 text-sm">Tạo buổi học mới để bắt đầu</p>
-                        </div>
+                        sessionStatus === 'UPCOMING' ||
+                        sessionStatus === 'ONGOING' ||
+                        (s.date >= today && sessionStatus !== 'FINISHED')
                       );
-                    }
+                    })
+                    .sort((a, b) => {
+                      if (a.date !== b.date) return a.date.localeCompare(b.date);
+                      return (a.start_time || '').localeCompare(b.start_time || '');
+                    });
 
-                    // Group sessions by week
-                    const groupByWeek = (sessions) => {
-                      const groups = {};
-                      sessions.forEach(session => {
-                        const sessionDate = new Date(session.date);
-                        const weekStart = new Date(sessionDate);
-                        weekStart.setDate(sessionDate.getDate() - sessionDate.getDay() + (sessionDate.getDay() === 0 ? -6 : 1));
-                        const weekKey = weekStart.toISOString().split('T')[0];
-                        
-                        if (!groups[weekKey]) {
-                          groups[weekKey] = [];
-                        }
-                        groups[weekKey].push(session);
-                      });
-                      return groups;
-                    };
-
-                    const weekGroups = groupByWeek(upcomingSessions);
-                    const weekKeys = Object.keys(weekGroups).sort();
-
-                    // Helper to get week label
-                    const getWeekLabel = (weekStart) => {
-                      const start = new Date(weekStart);
-                      const end = new Date(start);
-                      end.setDate(end.getDate() + 6);
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      
-                      if (start <= today && today <= end) {
-                        return 'Tuần này';
-                      }
-                      const nextWeek = new Date(today);
-                      nextWeek.setDate(today.getDate() + 7 - today.getDay() + (today.getDay() === 0 ? -6 : 1));
-                      if (start.getTime() === nextWeek.getTime()) {
-                        return 'Tuần sau';
-                      }
-                      return `${start.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`;
-                    };
-
-                    // Helper to calculate days until session
-                    const getDaysUntil = (dateStr) => {
-                      const sessionDate = new Date(dateStr);
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      sessionDate.setHours(0, 0, 0, 0);
-                      const diffTime = sessionDate - today;
-                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                      return diffDays;
-                    };
-
+                  if (upcomingSessions.length === 0) {
                     return (
-                      <div className="space-y-6 max-w-6xl mx-auto">
-                        {weekKeys.map((weekKey) => {
-                          const weekSessions = weekGroups[weekKey];
-                          const weekStart = new Date(weekKey);
-                          
-                          return (
-                            <div key={weekKey} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                              {/* Week Header */}
-                              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="font-semibold text-lg">{getWeekLabel(weekKey)}</h4>
-                                  <span className="text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">
-                                    {weekSessions.length} buổi học
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              {/* Sessions in this week - Grid Layout */}
-                              <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {weekSessions.map((session) => {
-                                  const sessionDate = new Date(session.date);
-                                  const dayName = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][sessionDate.getDay()];
-                                  const isToday = session.date === today;
-                                  const daysUntil = getDaysUntil(session.date);
-                                  const sessionStatus = session.realTimeStatus || session.status;
-                                  
-                                  return (
-                                    <div 
-                                      key={session.session_id} 
-                                      onClick={() => handleViewSessionDetail(session)}
-                                      className={`bg-gradient-to-r rounded-lg p-4 border-l-4 transition-all hover:shadow-lg cursor-pointer ${
-                                        isToday 
-                                          ? 'border-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md' 
-                                          : sessionStatus === 'ONGOING'
-                                          ? 'border-green-500 bg-gradient-to-r from-green-50 to-emerald-50'
-                                          : 'border-gray-300 bg-white hover:border-blue-400'
-                                      }`}
-                                    >
-                                      <div className="flex items-start justify-between mb-3">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                            <h5 className="font-bold text-gray-800 text-base">
-                                              {dayName}
-                                            </h5>
-                                            {isToday && (
-                                              <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full font-semibold">
-                                                Hôm nay
-                                              </span>
-                                            )}
-                                            {!isToday && daysUntil > 0 && (
-                                              <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
-                                                Còn {daysUntil} ngày
-                                              </span>
-                                            )}
-                                            {sessionStatus === 'ONGOING' && (
-                                              <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full font-semibold animate-pulse">
-                                                Đang diễn ra
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-sm text-gray-600 mb-2 font-medium">
-                                            {sessionDate.toLocaleDateString('vi-VN', { 
-                                              day: 'numeric', 
-                                              month: 'long', 
-                                              year: 'numeric' 
-                                            })}
-                                          </p>
-                                          <div className="space-y-1.5 text-sm text-gray-700">
-                                            {session.room && (
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-gray-400">📍</span>
-                                                <span className="font-medium">{session.room}</span>
-                                              </div>
-                                            )}
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-gray-400">🕐</span>
-                                              <span className="font-semibold text-blue-600">
-                                                {session.start_time}
-                                                {session.end_time ? ` - ${session.end_time}` : ''}
-                                              </span>
-                                            </div>
-                                            {session.topic && (
-                                              <div className="flex items-start gap-2">
-                                                <span className="text-gray-400 mt-0.5">📝</span>
-                                                <span className="font-medium line-clamp-2">{session.topic}</span>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Action Buttons */}
-                                      <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleEditSession(session);
-                                          }}
-                                          className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition shadow-sm"
-                                        >
-                                          ✏️ Đổi Lịch
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedSessionDetail(session);
-                                            setShowDeleteSessionConfirm(true);
-                                          }}
-                                          className="flex-1 px-3 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition shadow-sm"
-                                        >
-                                          🗑️ Xóa
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-8 text-center border-2 border-dashed border-blue-200">
+                        <div className="text-4xl mb-3">📅</div>
+                        <p className="text-gray-700 font-medium text-lg mb-1">
+                          Chưa có buổi học sắp tới
+                        </p>
+                        <p className="text-gray-500 text-sm">Tạo buổi học mới để bắt đầu</p>
                       </div>
                     );
-                  })()}
+                  }
+
+                  // Group sessions by week
+                  const groupByWeek = sessions => {
+                    const groups = {};
+                    sessions.forEach(session => {
+                      const sessionDate = new Date(session.date);
+                      const weekStart = new Date(sessionDate);
+                      weekStart.setDate(
+                        sessionDate.getDate() -
+                          sessionDate.getDay() +
+                          (sessionDate.getDay() === 0 ? -6 : 1)
+                      );
+                      const weekKey = weekStart.toISOString().split('T')[0];
+
+                      if (!groups[weekKey]) {
+                        groups[weekKey] = [];
+                      }
+                      groups[weekKey].push(session);
+                    });
+                    return groups;
+                  };
+
+                  const weekGroups = groupByWeek(upcomingSessions);
+                  const weekKeys = Object.keys(weekGroups).sort();
+
+                  // Helper to get week label
+                  const getWeekLabel = weekStart => {
+                    const start = new Date(weekStart);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + 6);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    if (start <= today && today <= end) {
+                      return 'Tuần này';
+                    }
+                    const nextWeek = new Date(today);
+                    nextWeek.setDate(
+                      today.getDate() + 7 - today.getDay() + (today.getDay() === 0 ? -6 : 1)
+                    );
+                    if (start.getTime() === nextWeek.getTime()) {
+                      return 'Tuần sau';
+                    }
+                    return `${start.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} - ${end.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`;
+                  };
+
+                  // Helper to calculate days until session
+                  const getDaysUntil = dateStr => {
+                    const sessionDate = new Date(dateStr);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    sessionDate.setHours(0, 0, 0, 0);
+                    const diffTime = sessionDate - today;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    return diffDays;
+                  };
+
+                  return (
+                    <div className="space-y-6 max-w-6xl mx-auto">
+                      {weekKeys.map(weekKey => {
+                        const weekSessions = weekGroups[weekKey];
+
+                        return (
+                          <div
+                            key={weekKey}
+                            className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+                          >
+                            {/* Week Header */}
+                            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-semibold text-lg">{getWeekLabel(weekKey)}</h4>
+                                <span className="text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">
+                                  {weekSessions.length} buổi học
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Sessions in this week - Grid Layout */}
+                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {weekSessions.map(session => {
+                                const sessionDate = new Date(session.date);
+                                const dayName = [
+                                  'Chủ Nhật',
+                                  'Thứ 2',
+                                  'Thứ 3',
+                                  'Thứ 4',
+                                  'Thứ 5',
+                                  'Thứ 6',
+                                  'Thứ 7',
+                                ][sessionDate.getDay()];
+                                const isToday = session.date === today;
+                                const daysUntil = getDaysUntil(session.date);
+                                const sessionStatus = session.realTimeStatus || session.status;
+
+                                return (
+                                  <div
+                                    key={session.session_id}
+                                    onClick={() => handleViewSessionDetail(session)}
+                                    className={`bg-gradient-to-r rounded-lg p-4 border-l-4 transition-all hover:shadow-lg cursor-pointer ${
+                                      isToday
+                                        ? 'border-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md'
+                                        : sessionStatus === 'ONGOING'
+                                          ? 'border-green-500 bg-gradient-to-r from-green-50 to-emerald-50'
+                                          : 'border-gray-300 bg-white hover:border-blue-400'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between mb-3">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                          <h5 className="font-bold text-gray-800 text-base">
+                                            {dayName}
+                                          </h5>
+                                          {isToday && (
+                                            <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full font-semibold">
+                                              Hôm nay
+                                            </span>
+                                          )}
+                                          {!isToday && daysUntil > 0 && (
+                                            <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
+                                              Còn {daysUntil} ngày
+                                            </span>
+                                          )}
+                                          {sessionStatus === 'ONGOING' && (
+                                            <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full font-semibold animate-pulse">
+                                              Đang diễn ra
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-gray-600 mb-2 font-medium">
+                                          {sessionDate.toLocaleDateString('vi-VN', {
+                                            day: 'numeric',
+                                            month: 'long',
+                                            year: 'numeric',
+                                          })}
+                                        </p>
+                                        <div className="space-y-1.5 text-sm text-gray-700">
+                                          {session.room && (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-gray-400">📍</span>
+                                              <span className="font-medium">{session.room}</span>
+                                            </div>
+                                          )}
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-gray-400">🕐</span>
+                                            <span className="font-semibold text-blue-600">
+                                              {session.start_time}
+                                              {session.end_time ? ` - ${session.end_time}` : ''}
+                                            </span>
+                                          </div>
+                                          {session.topic && (
+                                            <div className="flex items-start gap-2">
+                                              <span className="text-gray-400 mt-0.5">📝</span>
+                                              <span className="font-medium line-clamp-2">
+                                                {session.topic}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          handleEditSession(session);
+                                        }}
+                                        className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition shadow-sm"
+                                      >
+                                        ✏️ Đổi Lịch
+                                      </button>
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          setSelectedSessionDetail(session);
+                                          setShowDeleteSessionConfirm(true);
+                                        }}
+                                        className="flex-1 px-3 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition shadow-sm"
+                                      >
+                                        🗑️ Xóa
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -1038,19 +1131,23 @@ function ClassDetail() {
                     return (
                       <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-8 text-center border-2 border-dashed border-green-200">
                         <div className="text-4xl mb-3">✅</div>
-                        <p className="text-gray-700 font-medium text-lg mb-1">Chưa có buổi học nào đã kết thúc</p>
-                        <p className="text-gray-500 text-sm">Các buổi học đã hoàn thành sẽ hiển thị ở đây</p>
+                        <p className="text-gray-700 font-medium text-lg mb-1">
+                          Chưa có buổi học nào đã kết thúc
+                        </p>
+                        <p className="text-gray-500 text-sm">
+                          Các buổi học đã hoàn thành sẽ hiển thị ở đây
+                        </p>
                       </div>
                     );
                   }
 
                   // Group sessions by month
-                  const groupByMonth = (sessions) => {
+                  const groupByMonth = sessions => {
                     const groups = {};
                     sessions.forEach(session => {
                       const sessionDate = new Date(session.date);
                       const monthKey = `${sessionDate.getFullYear()}-${String(sessionDate.getMonth() + 1).padStart(2, '0')}`;
-                      
+
                       if (!groups[monthKey]) {
                         groups[monthKey] = [];
                       }
@@ -1063,13 +1160,25 @@ function ClassDetail() {
                   const monthKeys = Object.keys(monthGroups).sort().reverse(); // Newest first
 
                   // Helper to get month label
-                  const getMonthLabel = (monthKey) => {
+                  const getMonthLabel = monthKey => {
                     const [year, month] = monthKey.split('-');
-                    const monthNames = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 
-                                      'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
+                    const monthNames = [
+                      'Tháng 1',
+                      'Tháng 2',
+                      'Tháng 3',
+                      'Tháng 4',
+                      'Tháng 5',
+                      'Tháng 6',
+                      'Tháng 7',
+                      'Tháng 8',
+                      'Tháng 9',
+                      'Tháng 10',
+                      'Tháng 11',
+                      'Tháng 12',
+                    ];
                     const today = new Date();
                     const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                    
+
                     if (monthKey === currentMonth) {
                       return `Tháng này (${monthNames[parseInt(month) - 1]} ${year})`;
                     }
@@ -1077,7 +1186,7 @@ function ClassDetail() {
                   };
 
                   // Helper to calculate days ago
-                  const getDaysAgo = (dateStr) => {
+                  const getDaysAgo = dateStr => {
                     const sessionDate = new Date(dateStr);
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
@@ -1089,11 +1198,14 @@ function ClassDetail() {
 
                   return (
                     <div className="space-y-6 max-w-6xl mx-auto">
-                      {monthKeys.map((monthKey) => {
+                      {monthKeys.map(monthKey => {
                         const monthSessions = monthGroups[monthKey];
-                        
+
                         return (
-                          <div key={monthKey} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                          <div
+                            key={monthKey}
+                            className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+                          >
                             {/* Month Header */}
                             <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-3">
                               <div className="flex items-center justify-between">
@@ -1103,17 +1215,25 @@ function ClassDetail() {
                                 </span>
                               </div>
                             </div>
-                            
+
                             {/* Sessions in this month - Grid Layout */}
                             <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {monthSessions.map((session) => {
+                              {monthSessions.map(session => {
                                 const sessionDate = new Date(session.date);
-                                const dayName = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][sessionDate.getDay()];
+                                const dayName = [
+                                  'Chủ Nhật',
+                                  'Thứ 2',
+                                  'Thứ 3',
+                                  'Thứ 4',
+                                  'Thứ 5',
+                                  'Thứ 6',
+                                  'Thứ 7',
+                                ][sessionDate.getDay()];
                                 const daysAgo = getDaysAgo(session.date);
-                                
+
                                 return (
-                                  <div 
-                                    key={session.session_id} 
+                                  <div
+                                    key={session.session_id}
                                     id={`session-${session.session_id}`}
                                     className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border-l-4 border-green-500 hover:shadow-md transition-all"
                                   >
@@ -1143,10 +1263,10 @@ function ClassDetail() {
                                           )}
                                         </div>
                                         <p className="text-sm text-gray-600 mb-2 font-medium">
-                                          {sessionDate.toLocaleDateString('vi-VN', { 
-                                            day: 'numeric', 
-                                            month: 'long', 
-                                            year: 'numeric' 
+                                          {sessionDate.toLocaleDateString('vi-VN', {
+                                            day: 'numeric',
+                                            month: 'long',
+                                            year: 'numeric',
                                           })}
                                         </p>
                                         <div className="space-y-1.5 text-sm text-gray-700">
@@ -1166,13 +1286,15 @@ function ClassDetail() {
                                           {session.topic && (
                                             <div className="flex items-start gap-2">
                                               <span className="text-gray-400 mt-0.5">📝</span>
-                                              <span className="font-medium line-clamp-2">{session.topic}</span>
+                                              <span className="font-medium line-clamp-2">
+                                                {session.topic}
+                                              </span>
                                             </div>
                                           )}
                                         </div>
                                       </div>
                                     </div>
-                                    
+
                                     {/* Action Buttons */}
                                     <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
                                       {session.hasQR && (
@@ -1180,9 +1302,11 @@ function ClassDetail() {
                                           onClick={() => {
                                             const protocol = window.location.protocol;
                                             const hostname = window.location.hostname;
-                                            const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+                                            const port =
+                                              window.location.port ||
+                                              (protocol === 'https:' ? '443' : '80');
                                             const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${session.qrToken}`;
-                                            
+
                                             setQrData({
                                               token: session.qrToken,
                                               url: qrURL,
@@ -1191,8 +1315,8 @@ function ClassDetail() {
                                                 date: session.date,
                                                 time: `${session.start_time}${session.end_time ? ` - ${session.end_time}` : ''}`,
                                                 room: session.room || 'Chưa có',
-                                                topic: session.topic || 'Chưa có'
-                                              }
+                                                topic: session.topic || 'Chưa có',
+                                              },
                                             });
                                             setShowQRModal(true);
                                           }}
@@ -1204,7 +1328,9 @@ function ClassDetail() {
                                       <button
                                         onClick={async () => {
                                           if (session.attendanceSessionId) {
-                                            await fetchAttendanceRecords(session.attendanceSessionId);
+                                            await fetchAttendanceRecords(
+                                              session.attendanceSessionId
+                                            );
                                             setShowAttendanceListModal(true);
                                           } else {
                                             alert('Chưa có phiên điểm danh cho buổi học này');
@@ -1212,22 +1338,26 @@ function ClassDetail() {
                                         }}
                                         className="flex-1 px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition"
                                       >
-                                        👥 Điểm Danh
+                                        👥 Xem DS Điểm Danh
                                       </button>
                                     </div>
-                                    
+
                                     {/* Materials */}
                                     {session.materials && session.materials.length > 0 && (
                                       <div className="mt-3 pt-3 border-t border-gray-200">
                                         <div className="flex flex-wrap gap-2">
-                                          {session.materials.map((material) => (
+                                          {session.materials.map(material => (
                                             <div
                                               key={material.material_id}
                                               className="bg-blue-50 rounded-lg px-3 py-2 cursor-pointer hover:bg-blue-100 border border-blue-200 transition"
-                                              onClick={() => window.open(material.file_url, '_blank')}
+                                              onClick={() =>
+                                                window.open(material.file_url, '_blank')
+                                              }
                                               title={material.name}
                                             >
-                                              <span className="text-xs font-medium text-blue-700">📄 {material.name}</span>
+                                              <span className="text-xs font-medium text-blue-700">
+                                                📄 {material.name}
+                                              </span>
                                             </div>
                                           ))}
                                         </div>
@@ -1247,7 +1377,6 @@ function ClassDetail() {
             </div>
           )}
 
-
           {activeTab === 'attendance' && (
             <div>
               <div className="mb-6 flex justify-between items-center">
@@ -1256,21 +1385,29 @@ function ClassDetail() {
                   <div className="flex gap-4 text-sm">
                     <div className="bg-green-50 px-3 py-2 rounded-lg">
                       <span className="text-gray-600">Đúng giờ: </span>
-                      <span className="font-semibold text-green-600">{attendanceData.stats.present}</span>
+                      <span className="font-semibold text-green-600">
+                        {attendanceData.stats.present}
+                      </span>
                     </div>
                     <div className="bg-yellow-50 px-3 py-2 rounded-lg">
                       <span className="text-gray-600">Muộn: </span>
-                      <span className="font-semibold text-yellow-600">{attendanceData.stats.late}</span>
+                      <span className="font-semibold text-yellow-600">
+                        {attendanceData.stats.late}
+                      </span>
                     </div>
                     {attendanceData.class.latitude && attendanceData.class.longitude && (
                       <>
                         <div className="bg-blue-50 px-3 py-2 rounded-lg">
                           <span className="text-gray-600">Hợp lệ: </span>
-                          <span className="font-semibold text-blue-600">{attendanceData.stats.valid_location}</span>
+                          <span className="font-semibold text-blue-600">
+                            {attendanceData.stats.valid_location}
+                          </span>
                         </div>
                         <div className="bg-red-50 px-3 py-2 rounded-lg">
                           <span className="text-gray-600">Không hợp lệ: </span>
-                          <span className="font-semibold text-red-600">{attendanceData.stats.invalid_location}</span>
+                          <span className="font-semibold text-red-600">
+                            {attendanceData.stats.invalid_location}
+                          </span>
                         </div>
                       </>
                     )}
@@ -1288,7 +1425,7 @@ function ClassDetail() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {allAttendanceRecords.map((record) => (
+                  {allAttendanceRecords.map(record => (
                     <div
                       key={record.record_id}
                       className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white"
@@ -1296,18 +1433,26 @@ function ClassDetail() {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-3">
-                            <h4 className="font-semibold text-gray-800 text-lg">{record.student.full_name}</h4>
-                            <span className="text-sm text-gray-500">({record.student.student_code})</span>
+                            <h4 className="font-semibold text-gray-800 text-lg">
+                              {record.student.full_name}
+                            </h4>
+                            <span className="text-sm text-gray-500">
+                              ({record.student.student_code})
+                            </span>
                             <span
                               className={`px-3 py-1 rounded text-xs font-semibold ${
                                 record.status === 'PRESENT'
                                   ? 'bg-green-100 text-green-700'
                                   : record.status === 'LATE'
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-red-100 text-red-700'
+                                    ? 'bg-yellow-100 text-yellow-700'
+                                    : 'bg-red-100 text-red-700'
                               }`}
                             >
-                              {record.status === 'PRESENT' ? '✅ Đúng giờ' : record.status === 'LATE' ? '⏰ Muộn' : '❌ Vắng'}
+                              {record.status === 'PRESENT'
+                                ? '✅ Đúng giờ'
+                                : record.status === 'LATE'
+                                  ? '⏰ Muộn'
+                                  : '❌ Vắng'}
                             </span>
                             {/* Hiển thị trạng thái vị trí nếu lớp có vị trí */}
                             {attendanceData?.class.latitude && attendanceData?.class.longitude && (
@@ -1316,15 +1461,15 @@ function ClassDetail() {
                                   record.location_valid === true
                                     ? 'bg-blue-100 text-blue-700'
                                     : record.location_valid === false
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-gray-100 text-gray-700'
                                 }`}
                               >
                                 {record.location_valid === true
                                   ? '✅ Vị trí hợp lệ'
                                   : record.location_valid === false
-                                  ? '❌ Vị trí không hợp lệ'
-                                  : '⚠️ Không có GPS'}
+                                    ? '❌ Vị trí không hợp lệ'
+                                    : '⚠️ Không có GPS'}
                               </span>
                             )}
                           </div>
@@ -1338,7 +1483,8 @@ function ClassDetail() {
                               {record.session?.end_time ? ` - ${record.session.end_time}` : ''}
                             </div>
                             <div>
-                              <span className="font-medium">Phòng:</span> {record.session?.room || 'N/A'}
+                              <span className="font-medium">Phòng:</span>{' '}
+                              {record.session?.room || 'N/A'}
                             </div>
                             <div>
                               <span className="font-medium">Thời gian điểm danh:</span>{' '}
@@ -1370,47 +1516,199 @@ function ClassDetail() {
                                     🗺️ Xem trên Google Maps
                                   </a>
                                   <span className="text-gray-500 text-xs">
-                                    ({parseFloat(record.latitude).toFixed(6)}, {parseFloat(record.longitude).toFixed(6)})
+                                    ({parseFloat(record.latitude).toFixed(6)},{' '}
+                                    {parseFloat(record.longitude).toFixed(6)})
                                   </span>
                                 </div>
-                                {attendanceData?.class.latitude && attendanceData?.class.longitude && (
-                                  <div className="space-y-1">
-                                    {record.distance_from_class !== null ? (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-600 text-sm">
-                                          📏 Khoảng cách từ lớp: <span className="font-semibold">{record.distance_from_class}m</span>
-                                        </span>
-                                        {attendanceData?.class.location_radius && (
-                                          <span className="text-gray-400 text-xs">
-                                            (Bán kính cho phép: {attendanceData.class.location_radius}m)
+                                {attendanceData?.class.latitude &&
+                                  attendanceData?.class.longitude && (
+                                    <div className="space-y-1">
+                                      {record.distance_from_class !== null ? (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-gray-600 text-sm">
+                                            📏 Khoảng cách từ lớp:{' '}
+                                            <span className="font-semibold">
+                                              {record.distance_from_class}m
+                                            </span>
                                           </span>
-                                        )}
-                                      </div>
-                                    ) : null}
-                                    {record.location_valid !== null && (
-                                      <div className={`text-sm font-medium ${
-                                        record.location_valid ? 'text-green-600' : 'text-red-600'
-                                      }`}>
-                                        {record.location_valid 
-                                          ? '✅ Điểm danh trong phạm vi cho phép' 
-                                          : '❌ Điểm danh ngoài phạm vi cho phép'}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                          {attendanceData?.class.location_radius && (
+                                            <span className="text-gray-400 text-xs">
+                                              (Bán kính cho phép:{' '}
+                                              {attendanceData.class.location_radius}m)
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : null}
+                                      {record.location_valid !== null && (
+                                        <div
+                                          className={`text-sm font-medium ${
+                                            record.location_valid
+                                              ? 'text-green-600'
+                                              : 'text-red-600'
+                                          }`}
+                                        >
+                                          {record.location_valid
+                                            ? '✅ Điểm danh trong phạm vi cho phép'
+                                            : '❌ Điểm danh ngoài phạm vi cho phép'}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                              </div>
+                            ) : record.no_gps_reason ? (
+                              <div className="space-y-2">
+                                <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                                  <p className="font-medium text-yellow-800 mb-1">
+                                    ⚠️ Lý do không có GPS:
+                                  </p>
+                                  <p className="text-sm text-yellow-700">{record.no_gps_reason}</p>
+                                </div>
                               </div>
                             ) : (
                               <div className="space-y-2">
                                 <p className="text-red-500 text-sm font-medium">
                                   ⚠️ Học sinh không cung cấp vị trí GPS khi điểm danh
                                 </p>
-                                {attendanceData?.class.latitude && attendanceData?.class.longitude && (
-                                  <p className="text-gray-500 text-xs">
-                                    Lớp học có yêu cầu vị trí GPS. Điểm danh này không thể xác minh vị trí.
-                                  </p>
-                                )}
+                                {attendanceData?.class.latitude &&
+                                  attendanceData?.class.longitude && (
+                                    <p className="text-gray-500 text-xs">
+                                      Lớp học có yêu cầu vị trí GPS. Điểm danh này không thể xác
+                                      minh vị trí.
+                                    </p>
+                                  )}
                               </div>
                             )}
+
+                            {/* Validation Status and Actions */}
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-gray-700">
+                                    Trạng thái đánh giá:
+                                  </span>
+                                  {(() => {
+                                    // Convert to number for comparison (handle boolean, string, or number)
+                                    const isValid = record.is_valid;
+                                    const isValidNum =
+                                      isValid === null || isValid === undefined
+                                        ? null
+                                        : Number(isValid);
+
+                                    if (isValidNum === null) {
+                                      return (
+                                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">
+                                          ⏳ Chờ đánh giá
+                                        </span>
+                                      );
+                                    } else if (isValidNum === 1) {
+                                      return (
+                                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                                          ✅ Hợp lệ
+                                        </span>
+                                      );
+                                    } else {
+                                      return (
+                                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                                          ❌ Không hợp lệ
+                                        </span>
+                                      );
+                                    }
+                                  })()}
+                                </div>
+
+                                {/* Validation Actions */}
+                                <div className="flex gap-2">
+                                  {record.is_valid === null && (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const response = await api.put(
+                                              `/attendance/${record.record_id}`,
+                                              {
+                                                is_valid: 1,
+                                              }
+                                            );
+                                            if (response.data.success) {
+                                              alert('Đã đánh giá điểm danh là hợp lệ');
+                                              fetchAllAttendanceRecords();
+                                            }
+                                          } catch (error) {
+                                            alert(
+                                              error.response?.data?.message || 'Cập nhật thất bại'
+                                            );
+                                          }
+                                        }}
+                                        className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
+                                        title="Đánh giá hợp lệ"
+                                      >
+                                        ✅ Hợp lệ
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const response = await api.put(
+                                              `/attendance/${record.record_id}`,
+                                              {
+                                                is_valid: 0,
+                                              }
+                                            );
+                                            if (response.data.success) {
+                                              alert('Đã đánh giá điểm danh là không hợp lệ');
+                                              fetchAllAttendanceRecords();
+                                            }
+                                          } catch (error) {
+                                            alert(
+                                              error.response?.data?.message || 'Cập nhật thất bại'
+                                            );
+                                          }
+                                        }}
+                                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
+                                        title="Đánh giá không hợp lệ"
+                                      >
+                                        ❌ Không hợp lệ
+                                      </button>
+                                    </>
+                                  )}
+                                  {(record.is_valid === 1 || record.is_valid === 0) && (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const response = await api.put(
+                                            `/attendance/${record.record_id}`,
+                                            {
+                                              is_valid: record.is_valid === 1 ? 0 : 1,
+                                            }
+                                          );
+                                          if (response.data.success) {
+                                            alert(
+                                              `Đã đổi đánh giá thành ${record.is_valid === 1 ? 'không hợp lệ' : 'hợp lệ'}`
+                                            );
+                                            fetchAllAttendanceRecords();
+                                          }
+                                        } catch (error) {
+                                          alert(
+                                            error.response?.data?.message || 'Cập nhật thất bại'
+                                          );
+                                        }
+                                      }}
+                                      className={`px-3 py-1 rounded text-sm transition ${
+                                        record.is_valid === 1
+                                          ? 'bg-red-600 text-white hover:bg-red-700'
+                                          : 'bg-green-600 text-white hover:bg-green-700'
+                                      }`}
+                                      title={
+                                        record.is_valid === 1
+                                          ? 'Đổi thành không hợp lệ'
+                                          : 'Đổi thành hợp lệ'
+                                      }
+                                    >
+                                      {record.is_valid === 1 ? '❌ Đổi' : '✅ Đổi'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1427,7 +1725,9 @@ function ClassDetail() {
                 <h3 className="text-xl font-semibold text-gray-800">Báo Cáo Điểm Danh Lớp Học</h3>
                 <button
                   onClick={handleExportClassReport}
-                  disabled={!classReport || !classReport.students || classReport.students.length === 0}
+                  disabled={
+                    !classReport || !classReport.students || classReport.students.length === 0
+                  }
                   className={`px-4 py-2 rounded-lg transition font-semibold ${
                     !classReport || !classReport.students || classReport.students.length === 0
                       ? 'bg-gray-400 cursor-not-allowed text-white'
@@ -1445,7 +1745,9 @@ function ClassDetail() {
               ) : !classReport || !classReport.overview ? (
                 <div className="text-center py-12">
                   <p className="text-gray-600">Không có dữ liệu báo cáo</p>
-                  <p className="text-sm text-gray-500 mt-2">Vui lòng đảm bảo lớp học đã có các buổi học đã kết thúc và có điểm danh</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Vui lòng đảm bảo lớp học đã có các buổi học đã kết thúc và có điểm danh
+                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1457,7 +1759,14 @@ function ClassDetail() {
                         <div className="flex items-center justify-center mb-6">
                           <div className="relative w-56 h-56">
                             <svg className="transform -rotate-90" viewBox="0 0 200 200">
-                              <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="40" />
+                              <circle
+                                cx="100"
+                                cy="100"
+                                r="80"
+                                fill="none"
+                                stroke="#e5e7eb"
+                                strokeWidth="40"
+                              />
                               <circle
                                 cx="100"
                                 cy="100"
@@ -1514,12 +1823,18 @@ function ClassDetail() {
                               <div className="w-5 h-5 bg-green-500 rounded-full"></div>
                               <div>
                                 <span className="font-medium">Đúng giờ</span>
-                                <p className="text-xs text-gray-500 mt-0.5">Điểm danh trong 15 phút đầu</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  Điểm danh trong 15 phút đầu
+                                </p>
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-green-600">{classReport.overview.on_time}%</div>
-                              <div className="text-xs text-gray-600">{classReport.overview.on_time_count} lượt</div>
+                              <div className="font-bold text-green-600">
+                                {classReport.overview.on_time}%
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                {classReport.overview.on_time_count} lượt
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
@@ -1527,12 +1842,18 @@ function ClassDetail() {
                               <div className="w-5 h-5 bg-blue-500 rounded-full"></div>
                               <div>
                                 <span className="font-medium">Muộn</span>
-                                <p className="text-xs text-gray-500 mt-0.5">Điểm danh sau 15 phút</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  Điểm danh sau 15 phút
+                                </p>
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-blue-600">{classReport.overview.late}%</div>
-                              <div className="text-xs text-gray-600">{classReport.overview.late_count} lượt</div>
+                              <div className="font-bold text-blue-600">
+                                {classReport.overview.late}%
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                {classReport.overview.late_count} lượt
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
@@ -1541,18 +1862,83 @@ function ClassDetail() {
                               <span className="font-medium">Vắng</span>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-yellow-600">{classReport.overview.absent}%</div>
-                              <div className="text-xs text-gray-600">{classReport.overview.absent_count} lượt</div>
+                              <div className="font-bold text-yellow-600">
+                                {classReport.overview.absent}%
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                {classReport.overview.absent_count} lượt
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-4 pt-4 border-t border-gray-200">
+                            <h5 className="font-semibold text-gray-700 mb-3">
+                              Thống kê hợp lệ/không hợp lệ:
+                            </h5>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between p-2 bg-emerald-50 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-4 h-4 bg-emerald-500 rounded-full"></div>
+                                  <span className="text-sm font-medium">Hợp lệ</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-emerald-600 text-sm">
+                                    {classReport.overview.valid_count || 0} lượt
+                                  </span>
+                                  {(classReport.overview.valid || 0) === 100 && (
+                                    <span className="text-xs text-emerald-600 font-medium">
+                                      (100%)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-4 h-4 bg-orange-500 rounded-full"></div>
+                                  <span className="text-sm font-medium">Không hợp lệ</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-orange-600 text-sm">
+                                    {classReport.overview.invalid_count || 0} lượt
+                                  </span>
+                                  {(classReport.overview.invalid || 0) === 100 && (
+                                    <span className="text-xs text-orange-600 font-medium">
+                                      (100%)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {classReport.overview.pending_count > 0 && (
+                                <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-4 h-4 bg-gray-500 rounded-full"></div>
+                                    <span className="text-sm font-medium">Chờ đánh giá</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-600 text-sm">
+                                      {classReport.overview.pending_count || 0} lượt
+                                    </span>
+                                    {(classReport.overview.pending || 0) === 100 && (
+                                      <span className="text-xs text-gray-600 font-medium">
+                                        (100%)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="mt-4 pt-4 border-t border-gray-200">
                             <div className="flex items-center justify-between mb-2">
                               <span className="font-semibold text-gray-700">Tổng số buổi học:</span>
-                              <span className="font-bold text-gray-900">{classReport.overview.total_sessions}</span>
+                              <span className="font-bold text-gray-900">
+                                {classReport.overview.total_sessions}
+                              </span>
                             </div>
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-gray-700">Tổng số bản ghi:</span>
-                              <span className="font-bold text-gray-900">{classReport.overview.total_records}</span>
+                              <span className="font-bold text-gray-900">
+                                {classReport.overview.total_records}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -1572,14 +1958,36 @@ function ClassDetail() {
                         <table className="w-full">
                           <thead className="bg-gray-50 sticky top-0">
                             <tr>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">STT</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Họ và tên</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">MSVV</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Tổng buổi</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Đúng giờ</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Muộn</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Vắng</th>
-                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Tỉ lệ</th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                STT
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Họ và tên
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                MSVV
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Tổng buổi
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Đúng giờ
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Muộn
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Vắng
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Tỉ lệ
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Hợp lệ
+                              </th>
+                              <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">
+                                Không hợp lệ
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1592,9 +2000,15 @@ function ClassDetail() {
                                 <td className="py-3 px-4 font-medium">{student.full_name}</td>
                                 <td className="py-3 px-4">{student.student_code}</td>
                                 <td className="py-3 px-4">{student.total_sessions}</td>
-                                <td className="py-3 px-4 text-green-600 font-semibold">{student.on_time || 0}</td>
-                                <td className="py-3 px-4 text-blue-600 font-semibold">{student.late || 0}</td>
-                                <td className="py-3 px-4 text-yellow-600 font-semibold">{student.absent || 0}</td>
+                                <td className="py-3 px-4 text-green-600 font-semibold">
+                                  {student.on_time || 0}
+                                </td>
+                                <td className="py-3 px-4 text-blue-600 font-semibold">
+                                  {student.late || 0}
+                                </td>
+                                <td className="py-3 px-4 text-yellow-600 font-semibold">
+                                  {student.absent || 0}
+                                </td>
                                 <td className="py-3 px-4">
                                   <span
                                     className={`font-semibold ${
@@ -1607,6 +2021,30 @@ function ClassDetail() {
                                   >
                                     {student.attendance_rate}
                                   </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-emerald-600 font-semibold">
+                                      {student.valid_count || 0}
+                                    </span>
+                                    {parseFloat(student.valid_rate || '0') === 100 && (
+                                      <span className="text-xs text-emerald-600 font-medium">
+                                        (100%)
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-orange-600 font-semibold">
+                                      {student.invalid_count || 0}
+                                    </span>
+                                    {parseFloat(student.invalid_rate || '0') === 100 && (
+                                      <span className="text-xs text-orange-600 font-medium">
+                                        (100%)
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -1627,7 +2065,7 @@ function ClassDetail() {
           {activeTab === 'settings' && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-xl font-semibold mb-6">Cài Đặt Lớp Học</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Image Upload */}
                 <div>
@@ -1636,7 +2074,11 @@ function ClassDetail() {
                   </label>
                   <div className="w-full h-64 bg-blue-50 rounded-lg flex items-center justify-center mb-4 border-2 border-dashed border-blue-300">
                     {settings.image_url ? (
-                      <img src={settings.image_url} alt="Class" className="w-full h-full object-cover rounded-lg" />
+                      <img
+                        src={settings.image_url}
+                        alt="Class"
+                        className="w-full h-full object-cover rounded-lg"
+                      />
                     ) : (
                       <div className="text-center">
                         <span className="text-6xl text-gray-400">+</span>
@@ -1648,7 +2090,7 @@ function ClassDetail() {
                     type="text"
                     placeholder="URL hình ảnh"
                     value={settings.image_url}
-                    onChange={e => setSettings({...settings, image_url: e.target.value})}
+                    onChange={e => setSettings({ ...settings, image_url: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1662,16 +2104,14 @@ function ClassDetail() {
                     <input
                       type="text"
                       value={settings.name}
-                      onChange={e => setSettings({...settings, name: e.target.value})}
+                      onChange={e => setSettings({ ...settings, name: e.target.value })}
                       placeholder="Tên lớp"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                  
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Mã lớp
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Mã lớp</label>
                     <input
                       type="text"
                       value={settings.class_code}
@@ -1688,7 +2128,7 @@ function ClassDetail() {
                     <input
                       type="number"
                       value={settings.capacity}
-                      onChange={e => setSettings({...settings, capacity: e.target.value})}
+                      onChange={e => setSettings({ ...settings, capacity: e.target.value })}
                       placeholder="Số SV tối đa"
                       min="1"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1702,7 +2142,7 @@ function ClassDetail() {
                     <input
                       type="number"
                       value={settings.planned_sessions}
-                      onChange={e => setSettings({...settings, planned_sessions: e.target.value})}
+                      onChange={e => setSettings({ ...settings, planned_sessions: e.target.value })}
                       placeholder="Số buổi học"
                       min="1"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1722,7 +2162,7 @@ function ClassDetail() {
                     <input
                       type="text"
                       value={settings.schedule_days}
-                      onChange={e => setSettings({...settings, schedule_days: e.target.value})}
+                      onChange={e => setSettings({ ...settings, schedule_days: e.target.value })}
                       placeholder="Thứ học (2=Thứ 2, 3=Thứ 3, ...)"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1738,7 +2178,7 @@ function ClassDetail() {
                     <input
                       type="text"
                       value={settings.schedule_periods}
-                      onChange={e => setSettings({...settings, schedule_periods: e.target.value})}
+                      onChange={e => setSettings({ ...settings, schedule_periods: e.target.value })}
                       placeholder="Tiết học (VD: 7-10)"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1754,7 +2194,7 @@ function ClassDetail() {
                     <input
                       type="date"
                       value={settings.start_date}
-                      onChange={e => setSettings({...settings, start_date: e.target.value})}
+                      onChange={e => setSettings({ ...settings, start_date: e.target.value })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p className="text-xs text-gray-500 mt-1">
@@ -1764,12 +2204,13 @@ function ClassDetail() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Ngày kết thúc môn học <span className="text-gray-500 text-xs">(Tùy chọn)</span>
+                      Ngày kết thúc môn học{' '}
+                      <span className="text-gray-500 text-xs">(Tùy chọn)</span>
                     </label>
                     <input
                       type="date"
                       value={settings.end_date}
-                      onChange={e => setSettings({...settings, end_date: e.target.value})}
+                      onChange={e => setSettings({ ...settings, end_date: e.target.value })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p className="text-xs text-gray-500 mt-1">
@@ -1790,7 +2231,9 @@ function ClassDetail() {
                     <input
                       type="number"
                       value={settings.default_duration_min}
-                      onChange={e => setSettings({...settings, default_duration_min: e.target.value})}
+                      onChange={e =>
+                        setSettings({ ...settings, default_duration_min: e.target.value })
+                      }
                       placeholder="90"
                       min="1"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1804,7 +2247,9 @@ function ClassDetail() {
                     <input
                       type="number"
                       value={settings.default_late_after_min}
-                      onChange={e => setSettings({...settings, default_late_after_min: e.target.value})}
+                      onChange={e =>
+                        setSettings({ ...settings, default_late_after_min: e.target.value })
+                      }
                       placeholder="15"
                       min="0"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1817,7 +2262,7 @@ function ClassDetail() {
                     </label>
                     <select
                       value={settings.default_method}
-                      onChange={e => setSettings({...settings, default_method: e.target.value})}
+                      onChange={e => setSettings({ ...settings, default_method: e.target.value })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="QR">QR Code</option>
@@ -1826,7 +2271,6 @@ function ClassDetail() {
                       <option value="GEO">Vị trí</option>
                     </select>
                   </div>
-
                 </div>
               </div>
 
@@ -1847,7 +2291,7 @@ function ClassDetail() {
                         image_url: classInfo.image_url || '',
                         default_duration_min: classInfo.default_duration_min || '90',
                         default_late_after_min: classInfo.default_late_after_min || '15',
-                        default_method: classInfo.default_method || 'QR'
+                        default_method: classInfo.default_method || 'QR',
                       });
                     }
                   }}
@@ -1868,7 +2312,8 @@ function ClassDetail() {
                 <h4 className="text-lg font-semibold mb-4 text-red-600">Vùng Nguy Hiểm</h4>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                   <p className="text-sm text-gray-700 mb-4">
-                    <span className="font-semibold text-red-600">Cảnh báo:</span> Xóa lớp học sẽ xóa vĩnh viễn tất cả dữ liệu liên quan. Hành động này không thể hoàn tác.
+                    <span className="font-semibold text-red-600">Cảnh báo:</span> Xóa lớp học sẽ xóa
+                    vĩnh viễn tất cả dữ liệu liên quan. Hành động này không thể hoàn tác.
                   </p>
                   <button
                     onClick={handleDeleteClass}
@@ -1939,7 +2384,7 @@ function ClassDetail() {
                     <input
                       type="date"
                       value={newSession.date}
-                      onChange={e => setNewSession({...newSession, date: e.target.value})}
+                      onChange={e => setNewSession({ ...newSession, date: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     />
@@ -1952,7 +2397,7 @@ function ClassDetail() {
                       <input
                         type="time"
                         value={newSession.start_time}
-                        onChange={e => setNewSession({...newSession, start_time: e.target.value})}
+                        onChange={e => setNewSession({ ...newSession, start_time: e.target.value })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
@@ -1964,7 +2409,7 @@ function ClassDetail() {
                       <input
                         type="time"
                         value={newSession.end_time}
-                        onChange={e => setNewSession({...newSession, end_time: e.target.value})}
+                        onChange={e => setNewSession({ ...newSession, end_time: e.target.value })}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -1976,19 +2421,17 @@ function ClassDetail() {
                     <input
                       type="text"
                       value={newSession.room}
-                      onChange={e => setNewSession({...newSession, room: e.target.value})}
+                      onChange={e => setNewSession({ ...newSession, room: e.target.value })}
                       placeholder="VD: A112"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Chủ đề
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Chủ đề</label>
                     <input
                       type="text"
                       value={newSession.topic}
-                      onChange={e => setNewSession({...newSession, topic: e.target.value})}
+                      onChange={e => setNewSession({ ...newSession, topic: e.target.value })}
                       placeholder="Chủ đề buổi học"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -1997,7 +2440,13 @@ function ClassDetail() {
                     <button
                       onClick={() => {
                         setShowCreateSessionModal(false);
-                        setNewSession({ date: '', start_time: '', end_time: '', room: '', topic: '' });
+                        setNewSession({
+                          date: '',
+                          start_time: '',
+                          end_time: '',
+                          room: '',
+                          topic: '',
+                        });
                       }}
                       className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
                     >
@@ -2086,7 +2535,7 @@ function ClassDetail() {
                     <select
                       id="qrLateAfterSelect"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      defaultValue={classInfo?.default_late_after_min || "15"}
+                      defaultValue={classInfo?.default_late_after_min || '15'}
                     >
                       <option value="5">5 phút</option>
                       <option value="10">10 phút</option>
@@ -2097,7 +2546,29 @@ function ClassDetail() {
                       <option value="60">60 phút</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-2">
-                      Sau thời gian này, học sinh quét QR sẽ được tính là đi muộn. QR code sẽ tồn tại đến khi buổi học kết thúc.
+                      Sau thời gian này, học sinh quét QR sẽ được tính là đi muộn. QR code sẽ tồn
+                      tại đến khi buổi học kết thúc.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Bán kính cho phép điểm danh (mét)
+                    </label>
+                    <select
+                      id="qrLocationRadiusSelect"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      defaultValue="10"
+                    >
+                      <option value="5">5 mét</option>
+                      <option value="6">6 mét</option>
+                      <option value="7">7 mét</option>
+                      <option value="8">8 mét</option>
+                      <option value="9">9 mét</option>
+                      <option value="10">10 mét</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Học sinh phải ở trong bán kính này so với vị trí của bạn (giáo viên) để điểm
+                      danh hợp lệ. Hệ thống sẽ yêu cầu GPS khi tạo QR.
                     </p>
                   </div>
                   <div className="flex gap-4 justify-end">
@@ -2113,7 +2584,9 @@ function ClassDetail() {
                     <button
                       onClick={() => {
                         const lateAfter = document.getElementById('qrLateAfterSelect').value;
-                        handleCreateQR(lateAfter);
+                        const locationRadius =
+                          document.getElementById('qrLocationRadiusSelect').value;
+                        handleCreateQR(lateAfter, locationRadius);
                       }}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                     >
@@ -2153,7 +2626,7 @@ function ClassDetail() {
                             weekday: 'long',
                             day: 'numeric',
                             month: 'long',
-                            year: 'numeric'
+                            year: 'numeric',
                           })}
                         </p>
                       </div>
@@ -2161,25 +2634,39 @@ function ClassDetail() {
                         <p className="text-sm text-gray-600 mb-1">🕐 Thời gian</p>
                         <p className="font-semibold text-gray-800">
                           {selectedSessionDetail.start_time}
-                          {selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}
+                          {selectedSessionDetail.end_time
+                            ? ` - ${selectedSessionDetail.end_time}`
+                            : ''}
                         </p>
                       </div>
                       {selectedSessionDetail.room && (
                         <div>
                           <p className="text-sm text-gray-600 mb-1">📍 Phòng học</p>
-                          <p className="font-semibold text-gray-800">{selectedSessionDetail.room}</p>
+                          <p className="font-semibold text-gray-800">
+                            {selectedSessionDetail.room}
+                          </p>
                         </div>
                       )}
                       <div>
                         <p className="text-sm text-gray-600 mb-1">📊 Trạng thái</p>
-                        <p className={`font-semibold ${
-                          (selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) === 'FINISHED' ? 'text-green-600' :
-                          (selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) === 'ONGOING' ? 'text-blue-600' :
-                          'text-gray-600'
-                        }`}>
-                          {(selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) === 'FINISHED' ? 'Đã kết thúc' :
-                           (selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) === 'ONGOING' ? 'Đang diễn ra' :
-                           'Sắp tới'}
+                        <p
+                          className={`font-semibold ${
+                            (selectedSessionDetail.realTimeStatus ||
+                              selectedSessionDetail.status) === 'FINISHED'
+                              ? 'text-green-600'
+                              : (selectedSessionDetail.realTimeStatus ||
+                                    selectedSessionDetail.status) === 'ONGOING'
+                                ? 'text-blue-600'
+                                : 'text-gray-600'
+                          }`}
+                        >
+                          {(selectedSessionDetail.realTimeStatus ||
+                            selectedSessionDetail.status) === 'FINISHED'
+                            ? 'Đã kết thúc'
+                            : (selectedSessionDetail.realTimeStatus ||
+                                  selectedSessionDetail.status) === 'ONGOING'
+                              ? 'Đang diễn ra'
+                              : 'Sắp tới'}
                         </p>
                       </div>
                     </div>
@@ -2194,26 +2681,31 @@ function ClassDetail() {
 
                 {/* Action Buttons */}
                 <div className="space-y-3">
-                  {(selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) === 'ONGOING' ? (
+                  {(selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) ===
+                  'ONGOING' ? (
                     <>
                       {selectedSessionDetail.hasQR && !selectedSessionDetail.qrExpired ? (
                         <button
                           onClick={() => {
                             const protocol = window.location.protocol;
                             const hostname = window.location.hostname;
-                            const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+                            const port =
+                              window.location.port || (protocol === 'https:' ? '443' : '80');
                             const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${selectedSessionDetail.qrToken}`;
-                            
+
                             setQrData({
                               token: selectedSessionDetail.qrToken,
                               url: qrURL,
                               expiresAt: selectedSessionDetail.qrExpiresAt,
+                              locationRadius: selectedSessionDetail.locationRadius || 10,
+                              teacherLatitude: selectedSessionDetail.teacherLatitude,
+                              teacherLongitude: selectedSessionDetail.teacherLongitude,
                               sessionInfo: {
                                 date: selectedSessionDetail.date,
                                 time: `${selectedSessionDetail.start_time}${selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}`,
                                 room: selectedSessionDetail.room || 'Chưa có',
-                                topic: selectedSessionDetail.topic || 'Chưa có'
-                              }
+                                topic: selectedSessionDetail.topic || 'Chưa có',
+                              },
                             });
                             setShowQRModal(true);
                             setShowSessionDetailModal(false);
@@ -2245,7 +2737,7 @@ function ClassDetail() {
                       ▶️ Bắt Đầu Lớp
                     </button>
                   ) : null}
-                  
+
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => {
@@ -2266,7 +2758,7 @@ function ClassDetail() {
                       🗑️ Xóa Lịch Học
                     </button>
                   </div>
-                  
+
                   <button
                     onClick={() => {
                       setShowSessionDetailModal(false);
@@ -2292,36 +2784,56 @@ function ClassDetail() {
                     <input
                       type="date"
                       value={selectedSessionDetail.date}
-                      onChange={(e) => setSelectedSessionDetail({...selectedSessionDetail, date: e.target.value})}
+                      onChange={e =>
+                        setSelectedSessionDetail({ ...selectedSessionDetail, date: e.target.value })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Giờ bắt đầu</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Giờ bắt đầu
+                      </label>
                       <input
                         type="time"
                         value={selectedSessionDetail.start_time}
-                        onChange={(e) => setSelectedSessionDetail({...selectedSessionDetail, start_time: e.target.value})}
+                        onChange={e =>
+                          setSelectedSessionDetail({
+                            ...selectedSessionDetail,
+                            start_time: e.target.value,
+                          })
+                        }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Giờ kết thúc</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Giờ kết thúc
+                      </label>
                       <input
                         type="time"
                         value={selectedSessionDetail.end_time || ''}
-                        onChange={(e) => setSelectedSessionDetail({...selectedSessionDetail, end_time: e.target.value})}
+                        onChange={e =>
+                          setSelectedSessionDetail({
+                            ...selectedSessionDetail,
+                            end_time: e.target.value,
+                          })
+                        }
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phòng học</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Phòng học
+                    </label>
                     <input
                       type="text"
                       value={selectedSessionDetail.room || ''}
-                      onChange={(e) => setSelectedSessionDetail({...selectedSessionDetail, room: e.target.value})}
+                      onChange={e =>
+                        setSelectedSessionDetail({ ...selectedSessionDetail, room: e.target.value })
+                      }
                       placeholder="VD: A112"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -2331,7 +2843,12 @@ function ClassDetail() {
                     <input
                       type="text"
                       value={selectedSessionDetail.topic || ''}
-                      onChange={(e) => setSelectedSessionDetail({...selectedSessionDetail, topic: e.target.value})}
+                      onChange={e =>
+                        setSelectedSessionDetail({
+                          ...selectedSessionDetail,
+                          topic: e.target.value,
+                        })
+                      }
                       placeholder="VD: Giới thiệu môn học"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -2363,15 +2880,15 @@ function ClassDetail() {
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 w-full max-w-md">
                 <h3 className="text-xl font-semibold text-red-600 mb-4">Xác nhận xóa buổi học</h3>
-                <p className="text-gray-700 mb-2">
-                  Bạn có chắc chắn muốn xóa buổi học này?
-                </p>
+                <p className="text-gray-700 mb-2">Bạn có chắc chắn muốn xóa buổi học này?</p>
                 <div className="bg-gray-50 rounded-lg p-3 mb-4">
                   <p className="text-sm text-gray-600">
-                    <span className="font-semibold">Ngày:</span> {new Date(selectedSessionDetail.date).toLocaleDateString('vi-VN')}
+                    <span className="font-semibold">Ngày:</span>{' '}
+                    {new Date(selectedSessionDetail.date).toLocaleDateString('vi-VN')}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <span className="font-semibold">Thời gian:</span> {selectedSessionDetail.start_time}
+                    <span className="font-semibold">Thời gian:</span>{' '}
+                    {selectedSessionDetail.start_time}
                     {selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}
                   </p>
                   {selectedSessionDetail.topic && (
@@ -2380,9 +2897,7 @@ function ClassDetail() {
                     </p>
                   )}
                 </div>
-                <p className="text-sm text-red-600 mb-4">
-                  ⚠️ Hành động này không thể hoàn tác!
-                </p>
+                <p className="text-sm text-red-600 mb-4">⚠️ Hành động này không thể hoàn tác!</p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => {
@@ -2417,14 +2932,16 @@ function ClassDetail() {
                     ×
                   </button>
                 </div>
-                
+
                 <div className="space-y-4">
                   {/* Session Info */}
                   {qrData.sessionInfo && (
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                       <h4 className="font-semibold text-blue-800 mb-2">Thông tin buổi học:</h4>
                       <div className="text-sm text-blue-700 space-y-1">
-                        <p>📅 Ngày: {new Date(qrData.sessionInfo.date).toLocaleDateString('vi-VN')}</p>
+                        <p>
+                          📅 Ngày: {new Date(qrData.sessionInfo.date).toLocaleDateString('vi-VN')}
+                        </p>
                         <p>🕐 Thời gian: {qrData.sessionInfo.time}</p>
                         <p>📍 Phòng: {qrData.sessionInfo.room}</p>
                         {qrData.sessionInfo.topic && <p>📝 Chủ đề: {qrData.sessionInfo.topic}</p>}
@@ -2496,6 +3013,38 @@ function ClassDetail() {
                     </div>
                   </div>
 
+                  {/* Teacher GPS Location */}
+                  {qrData.teacherLatitude && qrData.teacherLongitude && (
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <h4 className="font-semibold text-blue-800 mb-2">
+                        📍 Vị trí GPS nơi tạo QR:
+                      </h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <a
+                            href={`https://www.google.com/maps?q=${qrData.teacherLatitude},${qrData.teacherLongitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline text-sm font-medium"
+                          >
+                            🗺️ Xem trên Google Maps
+                          </a>
+                        </div>
+                        <div className="text-sm text-blue-700">
+                          <p>
+                            <span className="font-medium">Tọa độ:</span>{' '}
+                            {parseFloat(qrData.teacherLatitude).toFixed(6)},{' '}
+                            {parseFloat(qrData.teacherLongitude).toFixed(6)}
+                          </p>
+                          <p>
+                            <span className="font-medium">Bán kính cho phép:</span>{' '}
+                            {qrData.locationRadius || 10}m
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Expires At */}
                   {qrData.expiresAt && (
                     <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
@@ -2516,6 +3065,10 @@ function ClassDetail() {
                       <li>Hoặc truy cập URL để điểm danh</li>
                       <li>Hoặc nhập token thủ công trong ứng dụng</li>
                       <li>QR code sẽ tồn tại đến khi buổi học kết thúc</li>
+                      <li>
+                        <strong>⚠️ Lưu ý:</strong> Học sinh phải bật GPS và ở trong bán kính{' '}
+                        {qrData.locationRadius || 10}m so với vị trí của bạn để điểm danh hợp lệ
+                      </li>
                     </ul>
                   </div>
 
@@ -2561,7 +3114,7 @@ function ClassDetail() {
               </div>
             ) : (
               <div className="space-y-4">
-                {attendanceRecords.map((record) => (
+                {attendanceRecords.map(record => (
                   <div
                     key={record.record_id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
@@ -2569,18 +3122,26 @@ function ClassDetail() {
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <h4 className="font-semibold text-gray-800">{record.student.full_name}</h4>
-                          <span className="text-sm text-gray-500">({record.student.student_code})</span>
+                          <h4 className="font-semibold text-gray-800">
+                            {record.student.full_name}
+                          </h4>
+                          <span className="text-sm text-gray-500">
+                            ({record.student.student_code})
+                          </span>
                           <span
                             className={`px-2 py-1 rounded text-xs font-semibold ${
                               record.status === 'PRESENT'
                                 ? 'bg-green-100 text-green-700'
                                 : record.status === 'LATE'
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-red-100 text-red-700'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-red-100 text-red-700'
                             }`}
                           >
-                            {record.status === 'PRESENT' ? '✅ Đúng giờ' : record.status === 'LATE' ? '⏰ Muộn' : '❌ Vắng'}
+                            {record.status === 'PRESENT'
+                              ? '✅ Đúng giờ'
+                              : record.status === 'LATE'
+                                ? '⏰ Muộn'
+                                : '❌ Vắng'}
                           </span>
                         </div>
                         <div className="text-sm text-gray-600 space-y-1">
@@ -2606,14 +3167,142 @@ function ClassDetail() {
                                   Xem trên Google Maps
                                 </a>
                                 <span className="text-gray-500 text-xs">
-                                  ({parseFloat(record.latitude).toFixed(6)}, {parseFloat(record.longitude).toFixed(6)})
+                                  ({parseFloat(record.latitude).toFixed(6)},{' '}
+                                  {parseFloat(record.longitude).toFixed(6)})
                                 </span>
                               </div>
+                            </div>
+                          ) : record.no_gps_reason ? (
+                            <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2">
+                              <p className="font-medium text-yellow-800 mb-1">
+                                ⚠️ Lý do không có GPS:
+                              </p>
+                              <p className="text-sm text-yellow-700">{record.no_gps_reason}</p>
                             </div>
                           ) : (
                             <p className="text-gray-400 text-xs mt-1">Không có thông tin vị trí</p>
                           )}
+
+                          {/* Validation Status */}
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="font-medium text-gray-700">Trạng thái:</span>
+                            {(() => {
+                              // Convert to number for comparison (handle boolean, string, or number)
+                              const isValid = record.is_valid;
+                              const isValidNum =
+                                isValid === null || isValid === undefined ? null : Number(isValid);
+
+                              if (isValidNum === null) {
+                                return (
+                                  <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">
+                                    ⏳ Chờ đánh giá
+                                  </span>
+                                );
+                              } else if (isValidNum === 1) {
+                                return (
+                                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                                    ✅ Hợp lệ
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                                    ❌ Không hợp lệ
+                                  </span>
+                                );
+                              }
+                            })()}
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Validation Actions */}
+                      <div className="flex flex-col gap-2">
+                        {record.is_valid === null && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const response = await api.put(
+                                    `/attendance/${record.record_id}`,
+                                    {
+                                      is_valid: 1,
+                                    }
+                                  );
+                                  if (response.data.success) {
+                                    alert('Đã đánh giá điểm danh là hợp lệ');
+                                    fetchAttendanceRecords(
+                                      selectedSessionDetail?.attendanceSessionId
+                                    );
+                                  }
+                                } catch (error) {
+                                  alert(error.response?.data?.message || 'Cập nhật thất bại');
+                                }
+                              }}
+                              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
+                              title="Đánh giá hợp lệ"
+                            >
+                              ✅ Hợp lệ
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const response = await api.put(
+                                    `/attendance/${record.record_id}`,
+                                    {
+                                      is_valid: 0,
+                                    }
+                                  );
+                                  if (response.data.success) {
+                                    alert('Đã đánh giá điểm danh là không hợp lệ');
+                                    fetchAttendanceRecords(
+                                      selectedSessionDetail?.attendanceSessionId
+                                    );
+                                  }
+                                } catch (error) {
+                                  alert(error.response?.data?.message || 'Cập nhật thất bại');
+                                }
+                              }}
+                              className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
+                              title="Đánh giá không hợp lệ"
+                            >
+                              ❌ Không hợp lệ
+                            </button>
+                          </div>
+                        )}
+                        {(record.is_valid === 1 || record.is_valid === 0) && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await api.put(`/attendance/${record.record_id}`, {
+                                  is_valid: record.is_valid === 1 ? 0 : 1,
+                                });
+                                if (response.data.success) {
+                                  alert(
+                                    `Đã đổi đánh giá thành ${record.is_valid === 1 ? 'không hợp lệ' : 'hợp lệ'}`
+                                  );
+                                  fetchAttendanceRecords(
+                                    selectedSessionDetail?.attendanceSessionId
+                                  );
+                                }
+                              } catch (error) {
+                                alert(error.response?.data?.message || 'Cập nhật thất bại');
+                              }
+                            }}
+                            className={`px-3 py-1 rounded text-sm transition ${
+                              record.is_valid === 1
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                            title={
+                              record.is_valid === 1 ? 'Đổi thành không hợp lệ' : 'Đổi thành hợp lệ'
+                            }
+                          >
+                            {record.is_valid === 1
+                              ? '❌ Đổi thành không hợp lệ'
+                              : '✅ Đổi thành hợp lệ'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2634,6 +3323,14 @@ function ClassDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Location Picker Modal */}
+      {showLocationPicker && (
+        <LocationPicker
+          onLocationSelected={handleLocationSelected}
+          onCancel={handleLocationPickerCancel}
+        />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { generateAcademicYears, getSemesters } from '../utils/academic';
 
 function GeneralReport() {
   const [selectedYear, setSelectedYear] = useState('');
@@ -13,11 +14,20 @@ function GeneralReport() {
     lateCount: 0,
     absentCount: 0,
     totalRecords: 0,
+    valid: 0,
+    invalid: 0,
+    pending: 0,
+    validCount: 0,
+    invalidCount: 0,
+    pendingCount: 0,
   });
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [courses, setCourses] = useState([]);
+
+  const academicYears = generateAcademicYears();
+  const semesters = getSemesters();
 
   useEffect(() => {
     fetchCourses();
@@ -64,6 +74,12 @@ function GeneralReport() {
           lateCount: data.overview?.late_count || 0,
           absentCount: data.overview?.absent_count || 0,
           totalRecords: data.overview?.total_records || 0,
+          valid: data.overview?.valid || 0,
+          invalid: data.overview?.invalid || 0,
+          pending: data.overview?.pending || 0,
+          validCount: data.overview?.valid_count || 0,
+          invalidCount: data.overview?.invalid_count || 0,
+          pendingCount: data.overview?.pending_count || 0,
         });
         setStudents(data.students || []);
       } else {
@@ -162,8 +178,11 @@ function GeneralReport() {
           className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
           <option value="">Năm Học</option>
-          <option value="2023-2024">2023-2024</option>
-          <option value="2024-2025">2024-2025</option>
+          {academicYears.map(year => (
+            <option key={year.value} value={year.value}>
+              {year.label}
+            </option>
+          ))}
         </select>
 
         <select
@@ -172,8 +191,11 @@ function GeneralReport() {
           className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
           <option value="">Học Kì</option>
-          <option value="1">Học Kì 1</option>
-          <option value="2">Học Kì 2</option>
+          {semesters.map(semester => (
+            <option key={semester.value} value={semester.displayValue}>
+              {semester.label}
+            </option>
+          ))}
         </select>
 
         <select
@@ -201,7 +223,14 @@ function GeneralReport() {
                 <div className="relative w-64 h-64">
                   {/* Donut Chart */}
                   <svg className="transform -rotate-90" viewBox="0 0 200 200">
-                    <circle cx="100" cy="100" r="80" fill="none" stroke="#e5e7eb" strokeWidth="40" />
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="#e5e7eb"
+                      strokeWidth="40"
+                    />
                     {/* On Time (Red) */}
                     <circle
                       cx="100"
@@ -242,12 +271,7 @@ function GeneralReport() {
                     >
                       {attendanceData.onTime + attendanceData.late}%
                     </text>
-                    <text
-                      x="100"
-                      y="125"
-                      textAnchor="middle"
-                      className="text-sm fill-gray-600"
-                    >
+                    <text x="100" y="125" textAnchor="middle" className="text-sm fill-gray-600">
                       Có mặt
                     </text>
                   </svg>
@@ -282,6 +306,51 @@ function GeneralReport() {
                   <div className="text-right">
                     <div className="font-bold text-yellow-600">{attendanceData.absent}%</div>
                     <div className="text-xs text-gray-600">{attendanceData.absentCount} lượt</div>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <h4 className="font-semibold text-gray-700 mb-3">
+                    Thống kê hợp lệ/không hợp lệ:
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 bg-emerald-500 rounded-full"></div>
+                        <span className="font-medium">Hợp lệ</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-emerald-600">{attendanceData.valid}%</div>
+                        <div className="text-xs text-gray-600">
+                          {attendanceData.validCount} lượt
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-5 h-5 bg-orange-500 rounded-full"></div>
+                        <span className="font-medium">Không hợp lệ</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-orange-600">{attendanceData.invalid}%</div>
+                        <div className="text-xs text-gray-600">
+                          {attendanceData.invalidCount} lượt
+                        </div>
+                      </div>
+                    </div>
+                    {attendanceData.pendingCount > 0 && (
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-5 h-5 bg-gray-500 rounded-full"></div>
+                          <span className="font-medium">Chờ đánh giá</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-gray-600">{attendanceData.pending}%</div>
+                          <div className="text-xs text-gray-600">
+                            {attendanceData.pendingCount} lượt
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-gray-200">
@@ -324,6 +393,8 @@ function GeneralReport() {
                     <th className="text-left py-2 px-4">MSVV</th>
                     <th className="text-left py-2 px-4">Tổng số buổi</th>
                     <th className="text-left py-2 px-4">Tỉ lệ chuyên cần</th>
+                    <th className="text-left py-2 px-4">Tỉ lệ hợp lệ</th>
+                    <th className="text-left py-2 px-4">Tỉ lệ không hợp lệ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -348,6 +419,26 @@ function GeneralReport() {
                         >
                           {student.attendance_rate}
                         </span>
+                      </td>
+                      <td className="py-2 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-600 font-semibold">
+                            {student.valid_count || 0}
+                          </span>
+                          {parseFloat(student.valid_rate || '0') === 100 && (
+                            <span className="text-xs text-emerald-600 font-medium">(100%)</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-orange-600 font-semibold">
+                            {student.invalid_count || 0}
+                          </span>
+                          {parseFloat(student.invalid_rate || '0') === 100 && (
+                            <span className="text-xs text-orange-600 font-medium">(100%)</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -447,6 +538,8 @@ function GeneralReport() {
                     <th className="text-left py-3 px-4">MSVV</th>
                     <th className="text-left py-3 px-4">Tổng số buổi</th>
                     <th className="text-left py-3 px-4">Tỉ lệ chuyên cần</th>
+                    <th className="text-left py-3 px-4">Tỉ lệ hợp lệ</th>
+                    <th className="text-left py-3 px-4">Tỉ lệ không hợp lệ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -471,6 +564,26 @@ function GeneralReport() {
                         >
                           {student.attendance_rate}
                         </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-600 font-semibold">
+                            {student.valid_count || 0}
+                          </span>
+                          {parseFloat(student.valid_rate || '0') === 100 && (
+                            <span className="text-xs text-emerald-600 font-medium">(100%)</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-orange-600 font-semibold">
+                            {student.invalid_count || 0}
+                          </span>
+                          {parseFloat(student.invalid_rate || '0') === 100 && (
+                            <span className="text-xs text-orange-600 font-medium">(100%)</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

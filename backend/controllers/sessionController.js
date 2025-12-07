@@ -9,96 +9,109 @@ const getSessions = async (req, res) => {
       include: [
         {
           model: SessionMaterial,
-          as: 'materials'
+          as: 'materials',
         },
         {
           model: AttendanceSession,
           as: 'attendanceSession',
           required: false,
-          include: [{
-            model: QRToken,
-            as: 'qrToken',
-            required: false
-          }]
-        }
+          include: [
+            {
+              model: QRToken,
+              as: 'qrToken',
+              required: false,
+            },
+          ],
+        },
       ],
-      order: [['date', 'DESC']]
+      order: [['date', 'DESC']],
     });
 
     const now = new Date();
 
     // Format sessions with attendance info and calculate real-time status
-    const formattedSessions = await Promise.all(sessions.map(async (session) => {
-      const sessionData = session.toJSON();
-      
-      // Calculate real-time status based on current time
-      const sessionDate = new Date(sessionData.date);
-      const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
-      const sessionStartTime = new Date(sessionDate);
-      sessionStartTime.setHours(startHour, startMinute, 0, 0);
-      
-      // Calculate end time
-      let sessionEndTime = null;
-      if (sessionData.end_time) {
-        const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
-        sessionEndTime = new Date(sessionDate);
-        sessionEndTime.setHours(endHour, endMinute, 0, 0);
-      } else {
-        // Default to 90 minutes if no end_time
-        sessionEndTime = new Date(sessionStartTime);
-        sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
-      }
-      
-      // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
-      if (sessionData.status === 'ONGOING' && sessionEndTime && now >= sessionEndTime) {
-        await session.update({ status: 'FINISHED' });
-        sessionData.status = 'FINISHED';
-      }
-      
-      // Determine real-time status
-      let realTimeStatus = sessionData.status;
-      if (sessionData.status !== 'CANCELLED') {
-        if (now < sessionStartTime) {
-          realTimeStatus = 'UPCOMING'; // Chưa đến giờ
-        } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
-          realTimeStatus = 'ONGOING'; // Đang diễn ra
-        } else if (sessionEndTime && now >= sessionEndTime) {
-          realTimeStatus = 'FINISHED'; // Đã kết thúc
+    const formattedSessions = await Promise.all(
+      sessions.map(async session => {
+        const sessionData = session.toJSON();
+
+        // Calculate real-time status based on current time
+        const sessionDate = new Date(sessionData.date);
+        const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
+        const sessionStartTime = new Date(sessionDate);
+        sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+        // Calculate end time
+        let sessionEndTime = null;
+        if (sessionData.end_time) {
+          const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
+          sessionEndTime = new Date(sessionDate);
+          sessionEndTime.setHours(endHour, endMinute, 0, 0);
+        } else {
+          // Default to 90 minutes if no end_time
+          sessionEndTime = new Date(sessionStartTime);
+          sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
         }
-      }
-      
-      sessionData.realTimeStatus = realTimeStatus;
-      // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING
-      sessionData.canStartSession = now < sessionStartTime && sessionData.status !== 'ONGOING' && sessionData.status !== 'FINISHED';
-      // Cho phép tạo QR chỉ khi lớp đã bắt đầu (status = ONGOING)
-      sessionData.canStartAttendance = sessionData.status === 'ONGOING' && (!sessionEndTime || now < sessionEndTime);
-      
-      if (sessionData.attendanceSession) {
-        sessionData.hasAttendance = true;
-        sessionData.attendanceSessionId = sessionData.attendanceSession.attendance_session_id;
-        sessionData.hasQR = !!sessionData.attendanceSession.qrToken;
-        if (sessionData.attendanceSession.qrToken) {
-          sessionData.qrToken = sessionData.attendanceSession.qrToken.token;
-          sessionData.qrExpiresAt = sessionData.attendanceSession.qrToken.expires_at;
-          sessionData.qrExpired = new Date(sessionData.attendanceSession.qrToken.expires_at) < new Date();
+
+        // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
+        if (sessionData.status === 'ONGOING' && sessionEndTime && now >= sessionEndTime) {
+          await session.update({ status: 'FINISHED' });
+          sessionData.status = 'FINISHED';
         }
-        sessionData.attendanceCloseAt = sessionData.attendanceSession.close_at;
-      } else {
-        sessionData.hasAttendance = false;
-        sessionData.hasQR = false;
-      }
-      return sessionData;
-    }));
+
+        // Determine real-time status
+        let realTimeStatus = sessionData.status;
+        if (sessionData.status !== 'CANCELLED') {
+          if (now < sessionStartTime) {
+            realTimeStatus = 'UPCOMING'; // Chưa đến giờ
+          } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+            realTimeStatus = 'ONGOING'; // Đang diễn ra
+          } else if (sessionEndTime && now >= sessionEndTime) {
+            realTimeStatus = 'FINISHED'; // Đã kết thúc
+          }
+        }
+
+        sessionData.realTimeStatus = realTimeStatus;
+        // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING
+        sessionData.canStartSession =
+          now < sessionStartTime &&
+          sessionData.status !== 'ONGOING' &&
+          sessionData.status !== 'FINISHED';
+        // Cho phép tạo QR chỉ khi lớp đã bắt đầu (status = ONGOING)
+        sessionData.canStartAttendance =
+          sessionData.status === 'ONGOING' && (!sessionEndTime || now < sessionEndTime);
+
+        if (sessionData.attendanceSession) {
+          sessionData.hasAttendance = true;
+          sessionData.attendanceSessionId = sessionData.attendanceSession.attendance_session_id;
+          sessionData.hasQR = !!sessionData.attendanceSession.qrToken;
+          if (sessionData.attendanceSession.qrToken) {
+            sessionData.qrToken = sessionData.attendanceSession.qrToken.token;
+            sessionData.qrExpiresAt = sessionData.attendanceSession.qrToken.expires_at;
+            sessionData.qrExpired =
+              new Date(sessionData.attendanceSession.qrToken.expires_at) < new Date();
+          }
+          sessionData.attendanceCloseAt = sessionData.attendanceSession.close_at;
+          // Include GPS location info
+          sessionData.teacherLatitude = sessionData.attendanceSession.teacher_latitude;
+          sessionData.teacherLongitude = sessionData.attendanceSession.teacher_longitude;
+          sessionData.locationRadius = sessionData.attendanceSession.location_radius;
+        } else {
+          sessionData.hasAttendance = false;
+          sessionData.hasQR = false;
+        }
+        return sessionData;
+      })
+    );
 
     res.json({
       success: true,
-      data: formattedSessions
+      data: formattedSessions,
     });
   } catch (error) {
     console.error('Get sessions error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -111,7 +124,7 @@ const createSession = async (req, res) => {
     if (!date || !start_time) {
       return res.status(400).json({
         success: false,
-        message: 'Date and start_time are required'
+        message: 'Date and start_time are required',
       });
     }
 
@@ -122,19 +135,19 @@ const createSession = async (req, res) => {
       end_time,
       room,
       topic,
-      status: 'ONGOING'
+      status: 'ONGOING',
     });
 
     res.status(201).json({
       success: true,
       message: 'Session created successfully',
-      data: session
+      data: session,
     });
   } catch (error) {
     console.error('Create session error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -148,53 +161,59 @@ const updateSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found'
+        message: 'Session not found',
       });
     }
 
     // Check if date/time conflicts with existing session (only if date or time is being changed)
     const checkDate = date || session.date;
     const checkStartTime = start_time || session.start_time;
-    const checkEndTime = end_time !== undefined ? (end_time || null) : session.end_time;
+    const checkEndTime = end_time !== undefined ? end_time || null : session.end_time;
 
     // Only check conflict if date or time is being changed
-    if ((date && date !== session.date) || (start_time && start_time !== session.start_time) || 
-        (end_time !== undefined && end_time !== session.end_time)) {
-      
+    if (
+      (date && date !== session.date) ||
+      (start_time && start_time !== session.start_time) ||
+      (end_time !== undefined && end_time !== session.end_time)
+    ) {
       const { Op } = require('sequelize');
-      
+
       // Find sessions on the same date
       const existingSessions = await Session.findAll({
         where: {
           class_id: session.class_id,
           date: checkDate,
           session_id: { [Op.ne]: id },
-          status: { [Op.ne]: 'CANCELLED' } // Ignore cancelled sessions
-        }
+          status: { [Op.ne]: 'CANCELLED' }, // Ignore cancelled sessions
+        },
       });
 
       // Check for time overlap
       for (const existing of existingSessions) {
         const existingStart = existing.start_time;
-        const existingEnd = existing.end_time || (() => {
-          // If no end_time, calculate default 90 minutes
-          const [h, m] = existingStart.split(':').map(Number);
-          const end = new Date();
-          end.setHours(h, m + 90, 0, 0);
-          return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
-        })();
+        const existingEnd =
+          existing.end_time ||
+          (() => {
+            // If no end_time, calculate default 90 minutes
+            const [h, m] = existingStart.split(':').map(Number);
+            const end = new Date();
+            end.setHours(h, m + 90, 0, 0);
+            return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
+          })();
 
         // Check if times overlap
         const newStart = checkStartTime;
-        const newEnd = checkEndTime || (() => {
-          const [h, m] = newStart.split(':').map(Number);
-          const end = new Date();
-          end.setHours(h, m + 90, 0, 0);
-          return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
-        })();
+        const newEnd =
+          checkEndTime ||
+          (() => {
+            const [h, m] = newStart.split(':').map(Number);
+            const end = new Date();
+            end.setHours(h, m + 90, 0, 0);
+            return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
+          })();
 
         // Convert times to minutes for easier comparison
-        const timeToMinutes = (timeStr) => {
+        const timeToMinutes = timeStr => {
           const [h, m] = timeStr.split(':').map(Number);
           return h * 60 + m;
         };
@@ -208,7 +227,7 @@ const updateSession = async (req, res) => {
         if (newStartMin < existingEndMin && newEndMin > existingStartMin) {
           return res.status(400).json({
             success: false,
-            message: `Đã có buổi học khác trong cùng thời gian (${existingStart}${existingEnd !== existingStart ? ` - ${existingEnd}` : ''}). Vui lòng chọn thời gian khác.`
+            message: `Đã có buổi học khác trong cùng thời gian (${existingStart}${existingEnd !== existingStart ? ` - ${existingEnd}` : ''}). Vui lòng chọn thời gian khác.`,
           });
         }
       }
@@ -227,11 +246,11 @@ const updateSession = async (req, res) => {
     res.json({
       success: true,
       message: 'Cập nhật buổi học thành công',
-      data: session
+      data: session,
     });
   } catch (error) {
     console.error('Update session error:', error);
-    
+
     // Handle unique constraint error
     if (error.name === 'SequelizeUniqueConstraintError') {
       // Get session again to check overlap
@@ -244,38 +263,43 @@ const updateSession = async (req, res) => {
           // Re-check with time overlap logic
           const checkDate = reqDate || sessionForCheck.date;
           const checkStartTime = reqStartTime || sessionForCheck.start_time;
-          const checkEndTime = reqEndTime !== undefined ? (reqEndTime || null) : sessionForCheck.end_time;
-          
+          const checkEndTime =
+            reqEndTime !== undefined ? reqEndTime || null : sessionForCheck.end_time;
+
           const { Op } = require('sequelize');
           const existingSessions = await Session.findAll({
             where: {
               class_id: sessionForCheck.class_id,
               date: checkDate,
               session_id: { [Op.ne]: sessionId },
-              status: { [Op.ne]: 'CANCELLED' }
-            }
+              status: { [Op.ne]: 'CANCELLED' },
+            },
           });
 
           // If there are existing sessions, check time overlap
           if (existingSessions.length > 0) {
             for (const existing of existingSessions) {
               const existingStart = existing.start_time;
-              const existingEnd = existing.end_time || (() => {
-                const [h, m] = existingStart.split(':').map(Number);
-                const end = new Date();
-                end.setHours(h, m + 90, 0, 0);
-                return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
-              })();
+              const existingEnd =
+                existing.end_time ||
+                (() => {
+                  const [h, m] = existingStart.split(':').map(Number);
+                  const end = new Date();
+                  end.setHours(h, m + 90, 0, 0);
+                  return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
+                })();
 
               const newStart = checkStartTime;
-              const newEnd = checkEndTime || (() => {
-                const [h, m] = newStart.split(':').map(Number);
-                const end = new Date();
-                end.setHours(h, m + 90, 0, 0);
-                return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
-              })();
+              const newEnd =
+                checkEndTime ||
+                (() => {
+                  const [h, m] = newStart.split(':').map(Number);
+                  const end = new Date();
+                  end.setHours(h, m + 90, 0, 0);
+                  return `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}:00`;
+                })();
 
-              const timeToMinutes = (timeStr) => {
+              const timeToMinutes = timeStr => {
                 const [h, m] = timeStr.split(':').map(Number);
                 return h * 60 + m;
               };
@@ -288,25 +312,26 @@ const updateSession = async (req, res) => {
               if (newStartMin < existingEndMin && newEndMin > existingStartMin) {
                 return res.status(400).json({
                   success: false,
-                  message: `Đã có buổi học khác trong cùng thời gian (${existingStart}${existingEnd !== existingStart ? ` - ${existingEnd}` : ''}). Vui lòng chọn thời gian khác.`
+                  message: `Đã có buổi học khác trong cùng thời gian (${existingStart}${existingEnd !== existingStart ? ` - ${existingEnd}` : ''}). Vui lòng chọn thời gian khác.`,
                 });
               }
             }
           }
-          
+
           // If no time overlap, it's just the unique constraint - allow it by removing the constraint check
           // Actually, we should remove the unique constraint from database, but for now, just allow update
           // by catching and ignoring this specific case
           return res.status(400).json({
             success: false,
-            message: 'Có thể có nhiều buổi học trong cùng ngày nếu khác giờ. Vui lòng kiểm tra lại thời gian.'
+            message:
+              'Có thể có nhiều buổi học trong cùng ngày nếu khác giờ. Vui lòng kiểm tra lại thời gian.',
           });
         }
       }
-      
+
       return res.status(400).json({
         success: false,
-        message: 'Đã có buổi học khác trong ngày này. Vui lòng chọn ngày khác.'
+        message: 'Đã có buổi học khác trong ngày này. Vui lòng chọn ngày khác.',
       });
     }
 
@@ -314,13 +339,13 @@ const updateSession = async (req, res) => {
     if (error.name === 'SequelizeValidationError') {
       return res.status(400).json({
         success: false,
-        message: error.errors.map(e => e.message).join(', ')
+        message: error.errors.map(e => e.message).join(', '),
       });
     }
 
     res.status(500).json({
       success: false,
-      message: error.message || 'Internal server error'
+      message: error.message || 'Internal server error',
     });
   }
 };
@@ -333,7 +358,7 @@ const startSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found'
+        message: 'Session not found',
       });
     }
 
@@ -359,21 +384,21 @@ const startSession = async (req, res) => {
     if (now >= sessionStartTime) {
       return res.status(400).json({
         success: false,
-        message: 'Buổi học đã đến giờ, không thể bắt đầu sớm'
+        message: 'Buổi học đã đến giờ, không thể bắt đầu sớm',
       });
     }
 
     if (session.status === 'ONGOING') {
       return res.status(400).json({
         success: false,
-        message: 'Buổi học đã được bắt đầu'
+        message: 'Buổi học đã được bắt đầu',
       });
     }
 
     if (session.status === 'FINISHED' || session.status === 'CANCELLED') {
       return res.status(400).json({
         success: false,
-        message: 'Không thể bắt đầu buổi học đã kết thúc hoặc đã hủy'
+        message: 'Không thể bắt đầu buổi học đã kết thúc hoặc đã hủy',
       });
     }
 
@@ -383,13 +408,13 @@ const startSession = async (req, res) => {
     res.json({
       success: true,
       message: 'Buổi học đã được bắt đầu',
-      data: session
+      data: session,
     });
   } catch (error) {
     console.error('Start session error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -397,7 +422,13 @@ const startSession = async (req, res) => {
 const startAttendance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { method = 'QR', late_after_minutes = 15 } = req.body;
+    const {
+      method = 'QR',
+      late_after_minutes = 15,
+      latitude,
+      longitude,
+      location_radius = 10,
+    } = req.body;
 
     const { AttendanceSession, QRToken } = require('../models');
     const { generateQRToken } = require('../utils/qrToken');
@@ -406,7 +437,7 @@ const startAttendance = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found'
+        message: 'Session not found',
       });
     }
 
@@ -414,7 +445,7 @@ const startAttendance = async (req, res) => {
     if (session.status !== 'ONGOING') {
       return res.status(400).json({
         success: false,
-        message: 'Vui lòng bắt đầu lớp học trước khi tạo QR điểm danh'
+        message: 'Vui lòng bắt đầu lớp học trước khi tạo QR điểm danh',
       });
     }
 
@@ -433,19 +464,19 @@ const startAttendance = async (req, res) => {
       sessionEndTime = new Date(sessionStartTime);
       sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
     }
-    
+
     if (sessionEndTime && now >= sessionEndTime) {
       // Tự động chuyển sang FINISHED
       await session.update({ status: 'FINISHED' });
       return res.status(400).json({
         success: false,
-        message: 'Buổi học đã kết thúc, không thể tạo QR điểm danh'
+        message: 'Buổi học đã kết thúc, không thể tạo QR điểm danh',
       });
     }
 
     // Check if attendance session already exists
     const existingAttendance = await AttendanceSession.findOne({
-      where: { session_id: id }
+      where: { session_id: id },
     });
 
     let attendanceSession;
@@ -456,7 +487,10 @@ const startAttendance = async (req, res) => {
         method,
         open_at: new Date(),
         close_at: sessionEndTime,
-        late_after_minutes
+        late_after_minutes,
+        teacher_latitude: latitude ? parseFloat(latitude) : null,
+        teacher_longitude: longitude ? parseFloat(longitude) : null,
+        location_radius: location_radius ? parseInt(location_radius) : 10,
       });
       attendanceSession = existingAttendance;
     } else {
@@ -469,7 +503,10 @@ const startAttendance = async (req, res) => {
         method,
         open_at: openAt,
         close_at: sessionEndTime,
-        late_after_minutes
+        late_after_minutes,
+        teacher_latitude: latitude ? parseFloat(latitude) : null,
+        teacher_longitude: longitude ? parseFloat(longitude) : null,
+        location_radius: location_radius ? parseInt(location_radius) : 10,
       });
     }
 
@@ -477,10 +514,10 @@ const startAttendance = async (req, res) => {
     if (method === 'QR') {
       // QR token sẽ tồn tại đến khi buổi học kết thúc (sessionEndTime)
       const expiresAt = sessionEndTime;
-      
+
       // Check if QR token already exists for this attendance session
       const existingQRToken = await QRToken.findOne({
-        where: { attendance_session_id: attendanceSession.attendance_session_id }
+        where: { attendance_session_id: attendanceSession.attendance_session_id },
       });
 
       if (existingQRToken) {
@@ -492,7 +529,7 @@ const startAttendance = async (req, res) => {
       } else {
         // Create new QR token
         let token = generateQRToken();
-        
+
         // Retry if token already exists
         let attempts = 0;
         let created = false;
@@ -501,7 +538,7 @@ const startAttendance = async (req, res) => {
             qrToken = await QRToken.create({
               attendance_session_id: attendanceSession.attendance_session_id,
               token,
-              expires_at: expiresAt
+              expires_at: expiresAt,
             });
             created = true;
           } catch (err) {
@@ -521,20 +558,23 @@ const startAttendance = async (req, res) => {
       data: {
         attendance_session_id: attendanceSession.attendance_session_id,
         qr_token: qrToken?.token || null,
-        expires_at: attendanceSession.close_at
-      }
+        expires_at: attendanceSession.close_at,
+        teacher_latitude: attendanceSession.teacher_latitude,
+        teacher_longitude: attendanceSession.teacher_longitude,
+        location_radius: attendanceSession.location_radius,
+      },
     });
   } catch (error) {
     console.error('Start attendance error:', error);
     console.error('Error details:', {
       name: error.name,
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
     res.status(500).json({
       success: false,
       message: error.message || 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 };
@@ -544,6 +584,5 @@ module.exports = {
   createSession,
   updateSession,
   startSession,
-  startAttendance
+  startAttendance,
 };
-
