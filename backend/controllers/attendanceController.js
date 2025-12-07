@@ -151,19 +151,7 @@ const scanQR = async (req, res) => {
     // Reload record to ensure we have the actual database value
     await record.reload();
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Attendance record created:', {
-        record_id: record.record_id,
-        student_id: studentId,
-        is_valid: record.is_valid,
-        hasGPS,
-        teacherLocationSet: !!(
-          attendanceSession.teacher_latitude && attendanceSession.teacher_longitude
-        ),
-        withinRadius,
-        locationValid,
-      });
-    }
+    // Attendance record created successfully
 
     res.json({
       success: true,

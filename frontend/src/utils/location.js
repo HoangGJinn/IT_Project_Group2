@@ -116,18 +116,14 @@ export const getLocationWithFallback = async (options = {}) => {
     const gpsLocation = await getGPSLocation();
     return gpsLocation;
   } catch (gpsError) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('GPS not available, trying IP geolocation...');
-    }
+    console.warn('GPS not available, trying IP geolocation...');
 
     // Try IP geolocation
     try {
       const ipLocation = await getIPLocation();
       return ipLocation;
     } catch (ipError) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('IP geolocation failed');
-      }
+      console.warn('IP geolocation failed');
 
       // If manual input is allowed, request it
       if (allowManual && onManualRequest) {

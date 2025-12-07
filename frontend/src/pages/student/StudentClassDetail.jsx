@@ -6,7 +6,6 @@ import {
   FaClock,
   FaMapMarkerAlt,
   FaChartLine,
-  FaQrcode,
   FaCheckCircle,
   FaTimesCircle,
   FaCamera,
@@ -623,6 +622,7 @@ function StudentClassDetail() {
                       <div className="space-y-6">
                         {weekKeys.map(weekKey => {
                           const weekSessions = weekGroups[weekKey];
+                          const weekStart = new Date(weekKey);
 
                           return (
                             <div

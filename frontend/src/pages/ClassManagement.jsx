@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FaSearch } from 'react-icons/fa';
 import api from '../utils/api';
 import { generateAcademicYears, getSemesters, semesterDisplayToBackend } from '../utils/academic';
 

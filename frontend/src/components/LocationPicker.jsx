@@ -36,9 +36,7 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
         setLoading(false);
         return;
       } catch (gpsError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('GPS not available:', gpsError);
-        }
+        console.warn('GPS not available:', gpsError);
       }
 
       // Try IP geolocation
@@ -50,9 +48,7 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
         setLoading(false);
         return;
       } catch (ipError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('IP geolocation failed:', ipError);
-        }
+        console.warn('IP geolocation failed:', ipError);
       }
 
       // If both fail, show manual input

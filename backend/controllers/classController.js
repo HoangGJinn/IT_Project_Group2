@@ -252,11 +252,8 @@ const createSessionsFromSchedule = async (
     }
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      `[CreateSessions] Found ${sessionsToCreate.length} sessions to create for class ${classId}`
-    );
-  }
+  // Found sessions to create
+  // console.log(`[CreateSessions] Found ${sessionsToCreate.length} sessions to create for class ${classId}`);
 
   if (sessionsToCreate.length > 0) {
     try {
@@ -841,13 +838,7 @@ const getAllAttendanceRecords = async (req, res) => {
 
       // Debug logging
       if (process.env.NODE_ENV === 'development') {
-        console.log('Record is_valid:', {
-          record_id: recordData.record_id,
-          rawIsValid,
-          isValidValue,
-          record_is_valid: record.is_valid,
-          recordData_is_valid: recordData.is_valid,
-        });
+        // Record is_valid - debug info available in development
       }
 
       return {
