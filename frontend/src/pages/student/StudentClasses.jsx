@@ -1,43 +1,77 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import api from '../../utils/api'
-import { formatScheduleDays, formatSchedulePeriods } from '../../utils/schedule'
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import api from '../../utils/api';
+import { formatScheduleDays, formatSchedulePeriods } from '../../utils/schedule';
+import {
+  generateAcademicYears,
+  getSemesters,
+  semesterDisplayToBackend,
+} from '../../utils/academic';
 
 function StudentClasses() {
-  const navigate = useNavigate()
-  const [selectedYear, setSelectedYear] = useState('')
-  const [selectedSemester, setSelectedSemester] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [classes, setClasses] = useState([])
-  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate();
+  const [selectedYear, setSelectedYear] = useState('');
+  const [selectedSemester, setSelectedSemester] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTimeout, setSearchTimeout] = useState(null);
+
+  const academicYears = generateAcademicYears();
+  const semesters = getSemesters();
 
   useEffect(() => {
-    fetchClasses()
-  }, [selectedYear, selectedSemester])
+    fetchClasses();
+  }, [selectedYear, selectedSemester]);
+
+  // Real-time search with debounce
+  useEffect(() => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    const timeout = setTimeout(() => {
+      fetchClasses();
+    }, 300); // Wait 300ms after user stops typing for real-time search
+
+    setSearchTimeout(timeout);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [searchTerm]);
+
+  const handleSearch = () => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+    fetchClasses();
+  };
 
   const fetchClasses = async () => {
     try {
-      setLoading(true)
-      const params = {}
-      if (selectedYear) params.school_year = selectedYear
-      if (selectedSemester) params.semester = selectedSemester
-      if (searchTerm) params.search = searchTerm
+      setLoading(true);
+      const params = {};
+      if (selectedYear) params.school_year = selectedYear;
+      if (selectedSemester) {
+        // Convert display value to backend value
+        params.semester = semesterDisplayToBackend(selectedSemester);
+      }
+      if (searchTerm && searchTerm.trim()) {
+        params.search = searchTerm.trim();
+      }
 
-      const response = await api.get('/student/classes', { params })
+      const response = await api.get('/student/classes', { params });
       if (response.data.success) {
-        setClasses(response.data.data || [])
+        setClasses(response.data.data || []);
       }
     } catch (error) {
-      console.error('Fetch classes error:', error)
-      setClasses([])
+      console.error('Fetch classes error:', error);
+      setClasses([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-
-  const handleFilter = () => {
-    fetchClasses()
-  }
+  };
 
   return (
     <div>
@@ -47,38 +81,52 @@ function StudentClasses() {
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <select
           value={selectedYear}
-          onChange={(e) => setSelectedYear(e.target.value)}
+          onChange={e => setSelectedYear(e.target.value)}
           className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="">Năm Học</option>
-          <option value="2023-2024">2023-2024</option>
-          <option value="2024-2025">2024-2025</option>
+          <option value="">Tất cả năm học</option>
+          {academicYears.map(year => (
+            <option key={year.value} value={year.value}>
+              {year.label}
+            </option>
+          ))}
         </select>
 
         <select
           value={selectedSemester}
-          onChange={(e) => setSelectedSemester(e.target.value)}
+          onChange={e => setSelectedSemester(e.target.value)}
           className="px-4 py-2 bg-blue-500 text-white rounded-lg border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
         >
-          <option value="">Học Kì</option>
-          <option value="1">Học Kì 1</option>
-          <option value="2">Học Kì 2</option>
+          <option value="">Tất cả học kì</option>
+          {semesters.map(semester => (
+            <option key={semester.value} value={semester.displayValue}>
+              {semester.label}
+            </option>
+          ))}
         </select>
 
-        <button 
-          onClick={handleFilter}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
-        >
-          LỌC
-        </button>
-
-        <input
-          type="text"
-          placeholder="Tìm kiếm lớp học..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex-1 min-w-[200px] relative">
+          <input
+            type="text"
+            placeholder="Tìm kiếm lớp học..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            onKeyPress={e => {
+              if (e.key === 'Enter') {
+                handleSearch();
+              }
+            }}
+            className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <button
+            onClick={handleSearch}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 text-blue-600 hover:text-blue-700 transition"
+            title="Tìm kiếm"
+          >
+            <FaSearch className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Class Cards Grid */}
@@ -92,7 +140,7 @@ function StudentClasses() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {classes.map((classItem) => (
+          {classes.map(classItem => (
             <div
               key={classItem.class_id}
               className="bg-white rounded-lg shadow-md hover:shadow-lg transition cursor-pointer border border-gray-200"
@@ -127,17 +175,20 @@ function StudentClasses() {
                   </p>
                   {classItem.teacher && (
                     <p>
-                      <span className="font-semibold">Giảng viên:</span> {classItem.teacher.full_name}
+                      <span className="font-semibold">Giảng viên:</span>{' '}
+                      {classItem.teacher.full_name}
                     </p>
                   )}
                   {classItem.schedule_days && (
                     <p>
-                      <span className="font-semibold">Lịch học:</span> {formatScheduleDays(classItem.schedule_days)}
+                      <span className="font-semibold">Lịch học:</span>{' '}
+                      {formatScheduleDays(classItem.schedule_days)}
                     </p>
                   )}
                   {classItem.schedule_periods && (
                     <p>
-                      <span className="font-semibold">Tiết:</span> {formatSchedulePeriods(classItem.schedule_periods)}
+                      <span className="font-semibold">Tiết:</span>{' '}
+                      {formatSchedulePeriods(classItem.schedule_periods)}
                     </p>
                   )}
                   {classItem.room && (
@@ -168,8 +219,7 @@ function StudentClasses() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default StudentClasses
-
+export default StudentClasses;

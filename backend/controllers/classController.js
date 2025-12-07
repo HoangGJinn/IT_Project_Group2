@@ -10,7 +10,7 @@ const {
   AttendanceSession,
 } = require('../models');
 const { Op } = require('sequelize');
-const { isWithinRadius, calculateDistance } = require('../utils/geolocation');
+const { calculateDistance } = require('../utils/geolocation');
 
 const getClasses = async (req, res) => {
   try {
@@ -122,7 +122,7 @@ const getClassById = async (req, res) => {
 };
 
 // Helper function to convert period to time
-const periodToTime = (period) => {
+const periodToTime = period => {
   if (period <= 4) return `${6 + period}:00`;
   if (period <= 6) return `${period + 4}:00`;
   if (period <= 10) return `${period}:00`;
@@ -131,23 +131,23 @@ const periodToTime = (period) => {
 
 // Helper function to parse schedule_days
 // Returns JavaScript day format: 0=Sunday, 1=Monday, ..., 6=Saturday
-const parseScheduleDays = (scheduleDays) => {
+const parseScheduleDays = scheduleDays => {
   if (!scheduleDays) return [];
-  
+
   const days = [];
   const lowerSchedule = scheduleDays.toLowerCase().trim();
-  
+
   // Map Vietnamese day names to JavaScript day format
   const dayMap = {
-    'chủ nhật': 0,  // Sunday -> 0 (JavaScript format)
-    'thứ 2': 1,     // Monday -> 1
-    'thứ 3': 2,     // Tuesday -> 2
-    'thứ 4': 3,     // Wednesday -> 3
-    'thứ 5': 4,     // Thursday -> 4
-    'thứ 6': 5,     // Friday -> 5
-    'thứ 7': 6      // Saturday -> 6
+    'chủ nhật': 0, // Sunday -> 0 (JavaScript format)
+    'thứ 2': 1, // Monday -> 1
+    'thứ 3': 2, // Tuesday -> 2
+    'thứ 4': 3, // Wednesday -> 3
+    'thứ 5': 4, // Thursday -> 4
+    'thứ 6': 5, // Friday -> 5
+    'thứ 7': 6, // Saturday -> 6
   };
-  
+
   // Check for Vietnamese day names first
   let foundVietnamese = false;
   Object.keys(dayMap).forEach(dayName => {
@@ -156,11 +156,11 @@ const parseScheduleDays = (scheduleDays) => {
       foundVietnamese = true;
     }
   });
-  
+
   if (foundVietnamese) {
     return days;
   }
-  
+
   // Otherwise, try to parse as numbers
   // Note: In our system input, 1=Monday, 2=Tuesday, ..., 7=Sunday
   // But we need JavaScript format: 0=Sunday, 1=Monday, ..., 6=Saturday
@@ -172,82 +172,92 @@ const parseScheduleDays = (scheduleDays) => {
       return num === 7 ? 0 : num;
     });
   }
-  
+
   return days;
 };
 
 // Helper function to parse schedule_periods
-const parseSchedulePeriods = (schedulePeriods) => {
+const parseSchedulePeriods = schedulePeriods => {
   if (!schedulePeriods) return null;
-  
+
   const match = schedulePeriods.match(/(\d+)[\s\->]+(\d+)/);
   if (match) {
     return {
       start: parseInt(match[1]),
-      end: parseInt(match[2])
+      end: parseInt(match[2]),
     };
   }
-  
+
   const singleMatch = schedulePeriods.match(/(\d+)/);
   if (singleMatch) {
     const period = parseInt(singleMatch[1]);
     return { start: period, end: period };
   }
-  
+
   return null;
 };
 
 // Helper function to create sessions from schedule
-const createSessionsFromSchedule = async (classId, scheduleDays, schedulePeriods, startDate, endDate) => {
+const createSessionsFromSchedule = async (
+  classId,
+  scheduleDays,
+  schedulePeriods,
+  startDate,
+  endDate
+) => {
   if (!scheduleDays || !schedulePeriods || !startDate || !endDate) {
     return; // Don't create sessions if schedule info is incomplete
   }
 
   const { Session } = require('../models');
-  
+
   const scheduleDaysArray = parseScheduleDays(scheduleDays);
   const schedulePeriodsObj = parseSchedulePeriods(schedulePeriods);
-  
+
   if (scheduleDaysArray.length === 0 || !schedulePeriodsObj) {
     return;
   }
 
   const startTime = periodToTime(schedulePeriodsObj.start);
   const endTime = periodToTime(schedulePeriodsObj.end);
-  
+
   const start = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T23:59:59');
-  
+
   const sessionsToCreate = [];
-  
+
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-    
+
     if (scheduleDaysArray.includes(dayOfWeek)) {
       const dateStr = d.toISOString().split('T')[0];
-      
+
       // Check if session already exists for this date
       const existingSession = await Session.findOne({
         where: {
           class_id: classId,
-          date: dateStr
-        }
+          date: dateStr,
+        },
       });
-      
+
       if (!existingSession) {
         sessionsToCreate.push({
           class_id: classId,
           date: dateStr,
           start_time: startTime,
           end_time: endTime,
-          status: 'ONGOING'
+          status: 'ONGOING',
         });
       }
     }
   }
-  
-  console.log(`[CreateSessions] Found ${sessionsToCreate.length} sessions to create for class ${classId}`);
-  
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      `[CreateSessions] Found ${sessionsToCreate.length} sessions to create for class ${classId}`
+    );
+  }
+
   if (sessionsToCreate.length > 0) {
     try {
       await Session.bulkCreate(sessionsToCreate, { ignoreDuplicates: true });
@@ -329,11 +339,13 @@ const createClass = async (req, res) => {
     });
   } catch (error) {
     console.error('Create class error:', error);
-    
+
     // Handle duplicate entry error
-    if (error.name === 'SequelizeUniqueConstraintError' || 
-        error.original?.code === 'ER_DUP_ENTRY' ||
-        error.code === 'ER_DUP_ENTRY') {
+    if (
+      error.name === 'SequelizeUniqueConstraintError' ||
+      error.original?.code === 'ER_DUP_ENTRY' ||
+      error.code === 'ER_DUP_ENTRY'
+    ) {
       const duplicateField = error.fields?.class_code ? 'Mã lớp' : 'thông tin';
       const duplicateValue = error.fields?.class_code || 'đã tồn tại';
       return res.status(400).json({
@@ -341,7 +353,7 @@ const createClass = async (req, res) => {
         message: `${duplicateField} "${duplicateValue}" đã tồn tại. Vui lòng chọn mã lớp khác.`,
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -365,15 +377,26 @@ const updateClass = async (req, res) => {
     await classData.update(updates);
 
     // Tự động tạo các session từ schedule nếu schedule được cập nhật
-    const scheduleDays = updates.schedule_days !== undefined ? updates.schedule_days : classData.schedule_days;
-    const schedulePeriods = updates.schedule_periods !== undefined ? updates.schedule_periods : classData.schedule_periods;
+    const scheduleDays =
+      updates.schedule_days !== undefined ? updates.schedule_days : classData.schedule_days;
+    const schedulePeriods =
+      updates.schedule_periods !== undefined
+        ? updates.schedule_periods
+        : classData.schedule_periods;
     const startDate = updates.start_date !== undefined ? updates.start_date : classData.start_date;
     const endDate = updates.end_date !== undefined ? updates.end_date : classData.end_date;
 
     // Chỉ tạo sessions nếu schedule được cập nhật và có đầy đủ thông tin
-    if ((updates.schedule_days !== undefined || updates.schedule_periods !== undefined || 
-         updates.start_date !== undefined || updates.end_date !== undefined) &&
-        scheduleDays && schedulePeriods && startDate && endDate) {
+    if (
+      (updates.schedule_days !== undefined ||
+        updates.schedule_periods !== undefined ||
+        updates.start_date !== undefined ||
+        updates.end_date !== undefined) &&
+      scheduleDays &&
+      schedulePeriods &&
+      startDate &&
+      endDate
+    ) {
       try {
         await createSessionsFromSchedule(
           classData.class_id,
@@ -460,7 +483,7 @@ const getStudents = async (req, res) => {
         const finishedSessions = await Session.count({
           where: { class_id: id, status: 'FINISHED' },
         });
-        
+
         // Count distinct ONGOING sessions where this student has attendance record
         const ongoingAttendanceRecords = await AttendanceRecord.findAll({
           where: {
@@ -486,18 +509,18 @@ const getStudents = async (req, res) => {
             },
           ],
         });
-        
+
         const ongoingSessionIds = new Set();
         ongoingAttendanceRecords.forEach(record => {
           if (record.attendanceSession?.session?.session_id) {
             ongoingSessionIds.add(record.attendanceSession.session.session_id);
           }
         });
-        
+
         const totalSessions = finishedSessions + ongoingSessionIds.size;
 
         // Get attended sessions (both FINISHED and ONGOING)
-        const attendedSessions = await AttendanceRecord.count({
+        const attendanceRecords = await AttendanceRecord.findAll({
           where: {
             student_id: studentId,
             status: { [Op.in]: ['PRESENT', 'LATE'] },
@@ -522,8 +545,26 @@ const getStudents = async (req, res) => {
           ],
         });
 
+        const attendedSessions = attendanceRecords.length;
+
+        // Calculate validation stats
+        const validRecords = attendanceRecords.filter(r => r.is_valid === 1).length;
+        const invalidRecords = attendanceRecords.filter(r => r.is_valid === 0).length;
+        const pendingRecords = attendanceRecords.filter(r => r.is_valid === null).length;
+        const recordsWithValidation = attendanceRecords.filter(r => r.is_valid !== null).length;
+
         const attendanceRate =
           totalSessions > 0 ? ((attendedSessions / totalSessions) * 100).toFixed(1) + '%' : '0%';
+
+        const validRate =
+          recordsWithValidation > 0
+            ? ((validRecords / recordsWithValidation) * 100).toFixed(1) + '%'
+            : '0%';
+
+        const invalidRate =
+          recordsWithValidation > 0
+            ? ((invalidRecords / recordsWithValidation) * 100).toFixed(1) + '%'
+            : '0%';
 
         return {
           student_id: enrollment.student.student_id,
@@ -532,6 +573,11 @@ const getStudents = async (req, res) => {
           total_sessions: totalSessions,
           attended_sessions: attendedSessions,
           attendance_rate: attendanceRate,
+          valid_sessions: validRecords,
+          invalid_sessions: invalidRecords,
+          pending_sessions: pendingRecords,
+          valid_rate: validRate,
+          invalid_rate: invalidRate,
         };
       })
     );
@@ -677,7 +723,7 @@ const getAllAttendanceRecords = async (req, res) => {
     if (!classData) {
       return res.status(404).json({
         success: false,
-        message: 'Class not found'
+        message: 'Class not found',
       });
     }
 
@@ -685,9 +731,12 @@ const getAllAttendanceRecords = async (req, res) => {
     const sessions = await Session.findAll({
       where: {
         class_id: id,
-        status: { [Op.in]: ['ONGOING', 'FINISHED'] }
+        status: { [Op.in]: ['ONGOING', 'FINISHED'] },
       },
-      order: [['date', 'DESC'], ['start_time', 'DESC']]
+      order: [
+        ['date', 'DESC'],
+        ['start_time', 'DESC'],
+      ],
     });
 
     const sessionIds = sessions.map(s => s.session_id);
@@ -697,13 +746,15 @@ const getAllAttendanceRecords = async (req, res) => {
     if (sessionIds.length > 0) {
       attendanceSessions = await AttendanceSession.findAll({
         where: {
-          session_id: { [Op.in]: sessionIds }
+          session_id: { [Op.in]: sessionIds },
         },
-        include: [{
-          model: Session,
-          as: 'session',
-          attributes: ['session_id', 'date', 'start_time', 'end_time', 'room', 'topic', 'status']
-        }]
+        include: [
+          {
+            model: Session,
+            as: 'session',
+            attributes: ['session_id', 'date', 'start_time', 'end_time', 'room', 'topic', 'status'],
+          },
+        ],
       });
     }
 
@@ -714,26 +765,43 @@ const getAllAttendanceRecords = async (req, res) => {
     if (attendanceSessionIds.length > 0) {
       records = await AttendanceRecord.findAll({
         where: {
-          attendance_session_id: { [Op.in]: attendanceSessionIds }
+          attendance_session_id: { [Op.in]: attendanceSessionIds },
         },
-        include: [{
-          model: Student,
-          as: 'student',
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['full_name', 'email']
-          }]
-        }, {
-          model: AttendanceSession,
-          as: 'attendanceSession',
-          include: [{
-            model: Session,
-            as: 'session',
-            attributes: ['session_id', 'date', 'start_time', 'end_time', 'room', 'topic', 'status']
-          }]
-        }],
-        order: [['checkin_time', 'DESC']]
+        // Don't specify attributes - Sequelize will include all fields by default
+        include: [
+          {
+            model: Student,
+            as: 'student',
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['full_name', 'email'],
+              },
+            ],
+          },
+          {
+            model: AttendanceSession,
+            as: 'attendanceSession',
+            include: [
+              {
+                model: Session,
+                as: 'session',
+                attributes: [
+                  'session_id',
+                  'date',
+                  'start_time',
+                  'end_time',
+                  'room',
+                  'topic',
+                  'status',
+                ],
+              },
+            ],
+          },
+        ],
+        order: [['checkin_time', 'DESC']],
+        raw: false, // Ensure we get model instances, not plain objects
       });
     }
 
@@ -761,13 +829,34 @@ const getAllAttendanceRecords = async (req, res) => {
         }
       }
 
+      // Ensure is_valid is properly converted (could be 1, 0, or null)
+      // Get is_valid directly from the record model, not from toJSON() which might not include it
+      const rawIsValid = record.is_valid !== undefined ? record.is_valid : recordData.is_valid;
+      const isValidValue =
+        rawIsValid === null || rawIsValid === undefined
+          ? null
+          : rawIsValid === 1 || rawIsValid === true
+            ? 1
+            : 0;
+
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Record is_valid:', {
+          record_id: recordData.record_id,
+          rawIsValid,
+          isValidValue,
+          record_is_valid: record.is_valid,
+          recordData_is_valid: recordData.is_valid,
+        });
+      }
+
       return {
         record_id: recordData.record_id,
         student: {
           student_id: recordData.student.student_id,
           student_code: recordData.student.student_code,
           full_name: recordData.student.user.full_name,
-          email: recordData.student.user.email
+          email: recordData.student.user.email,
         },
         session: {
           session_id: recordData.attendanceSession?.session?.session_id,
@@ -776,15 +865,17 @@ const getAllAttendanceRecords = async (req, res) => {
           end_time: recordData.attendanceSession?.session?.end_time,
           room: recordData.attendanceSession?.session?.room,
           topic: recordData.attendanceSession?.session?.topic,
-          status: recordData.attendanceSession?.session?.status
+          status: recordData.attendanceSession?.session?.status,
         },
         status: recordData.status,
         checkin_time: recordData.checkin_time,
         source: recordData.source,
         latitude: recordData.latitude,
         longitude: recordData.longitude,
-        location_valid: locationValid,
-        distance_from_class: distance ? Math.round(distance) : null
+        no_gps_reason: recordData.no_gps_reason,
+        is_valid: isValidValue, // Use the actual database value
+        location_valid: locationValid, // Keep for backward compatibility
+        distance_from_class: distance ? Math.round(distance) : null,
       };
     });
 
@@ -797,7 +888,7 @@ const getAllAttendanceRecords = async (req, res) => {
           name: classData.name,
           latitude: classData.latitude,
           longitude: classData.longitude,
-          location_radius: classData.location_radius || 100
+          location_radius: classData.location_radius || 100,
         },
         records: formattedRecords,
         total: formattedRecords.length,
@@ -805,15 +896,15 @@ const getAllAttendanceRecords = async (req, res) => {
           present: formattedRecords.filter(r => r.status === 'PRESENT').length,
           late: formattedRecords.filter(r => r.status === 'LATE').length,
           valid_location: formattedRecords.filter(r => r.location_valid === true).length,
-          invalid_location: formattedRecords.filter(r => r.location_valid === false).length
-        }
-      }
+          invalid_location: formattedRecords.filter(r => r.location_valid === false).length,
+        },
+      },
     });
   } catch (error) {
     console.error('Get all attendance records error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };

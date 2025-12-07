@@ -1,35 +1,31 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import api from '../utils/api'
-import { QRCodeSVG } from 'qrcode.react'
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import api from '../utils/api';
 
 function TeachingSchedule() {
-  const navigate = useNavigate()
-  const [currentWeek, setCurrentWeek] = useState(new Date())
-  const [schedule, setSchedule] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  
+  const navigate = useNavigate();
+  const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [schedule, setSchedule] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   // QR Modal states
-  const [showQRModal, setShowQRModal] = useState(false)
-  const [showQRDurationModal, setShowQRDurationModal] = useState(false)
-  const [selectedSessionForQR, setSelectedSessionForQR] = useState(null)
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [showQRDurationModal, setShowQRDurationModal] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [pendingQRParams, setPendingQRParams] = useState(null);
+  const [selectedSessionForQR, setSelectedSessionForQR] = useState(null);
   const [qrData, setQrData] = useState({
     token: '',
     url: '',
     expiresAt: null,
-    sessionInfo: null
-  })
+    locationRadius: 10,
+    teacherLatitude: null,
+    teacherLongitude: null,
+    sessionInfo: null,
+  });
 
-  const daysOfWeek = [
-    'Thứ 2',
-    'Thứ 3',
-    'Thứ 4',
-    'Thứ 5',
-    'Thứ 6',
-    'Thứ 7',
-    'Chủ Nhật',
-  ]
+  const daysOfWeek = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
 
   // Color palette for different classes
   const colors = [
@@ -41,163 +37,187 @@ function TeachingSchedule() {
     'bg-indigo-600',
     'bg-pink-600',
     'bg-teal-600',
-  ]
+  ];
 
   // Get week start (Monday) and end (Sunday)
-  const getWeekRange = (date) => {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
-    const monday = new Date(d.setDate(diff))
-    monday.setHours(0, 0, 0, 0)
-    
-    const sunday = new Date(monday)
-    sunday.setDate(sunday.getDate() + 6)
-    sunday.setHours(23, 59, 59, 999)
-    
+  const getWeekRange = date => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const monday = new Date(d.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
     return {
       start: monday.toISOString().split('T')[0],
       end: sunday.toISOString().split('T')[0],
-      monday: monday
-    }
-  }
+      monday: monday,
+    };
+  };
 
   // Load schedule data
   const loadSchedule = async () => {
     try {
-      setLoading(true)
-      setError('')
-      const weekRange = getWeekRange(currentWeek)
-      
+      setLoading(true);
+      setError('');
+      const weekRange = getWeekRange(currentWeek);
+
       const response = await api.get('/schedule', {
         params: {
           week_start: weekRange.start,
-          week_end: weekRange.end
-        }
-      })
+          week_end: weekRange.end,
+        },
+      });
 
       if (response.data.success) {
         // Convert API response to display format
-        const scheduleData = {}
+        const scheduleData = {};
         response.data.data.schedule.forEach(dayData => {
-          scheduleData[dayData.day] = dayData.sessions || []
-        })
-        setSchedule(scheduleData)
+          scheduleData[dayData.day] = dayData.sessions || [];
+        });
+        setSchedule(scheduleData);
       }
     } catch (err) {
-      console.error('Error loading schedule:', err)
-      setError('Không thể tải lịch dạy. Vui lòng thử lại.')
+      console.error('Error loading schedule:', err);
+      setError('Không thể tải lịch dạy. Vui lòng thử lại.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    loadSchedule()
-  }, [currentWeek])
+    loadSchedule();
+  }, [currentWeek]);
 
   const goToPreviousWeek = () => {
-    const newDate = new Date(currentWeek)
-    newDate.setDate(newDate.getDate() - 7)
-    setCurrentWeek(newDate)
-  }
+    const newDate = new Date(currentWeek);
+    newDate.setDate(newDate.getDate() - 7);
+    setCurrentWeek(newDate);
+  };
 
   const goToNextWeek = () => {
-    const newDate = new Date(currentWeek)
-    newDate.setDate(newDate.getDate() + 7)
-    setCurrentWeek(newDate)
-  }
+    const newDate = new Date(currentWeek);
+    newDate.setDate(newDate.getDate() + 7);
+    setCurrentWeek(newDate);
+  };
 
   const goToCurrentWeek = () => {
-    setCurrentWeek(new Date())
-  }
+    setCurrentWeek(new Date());
+  };
 
   // Format date for display
-  const formatWeekRange = (date) => {
-    const weekRange = getWeekRange(date)
-    const start = weekRange.monday
-    const end = new Date(start)
-    end.setDate(end.getDate() + 6)
-    
-    const formatDate = (d) => {
-      return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
-    }
-    
-    return `${formatDate(start)} - ${formatDate(end)}/${start.getMonth() + 1}/${start.getFullYear()}`
-  }
+  const formatWeekRange = date => {
+    const weekRange = getWeekRange(date);
+    const start = weekRange.monday;
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+
+    const formatDate = d => {
+      return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+    };
+
+    return `${formatDate(start)} - ${formatDate(end)}/${start.getMonth() + 1}/${start.getFullYear()}`;
+  };
 
   // Get color for a class (consistent based on class_id)
-  const getClassColor = (classId) => {
-    return colors[classId % colors.length]
-  }
+  const getClassColor = classId => {
+    return colors[classId % colors.length];
+  };
 
   // Handle session click - create QR if session exists, otherwise navigate to class detail
-  const handleSessionClick = async (session) => {
+  const handleSessionClick = async session => {
     // If session has session_id, try to create QR
     if (session.session_id) {
-      setSelectedSessionForQR(session)
-      setShowQRDurationModal(true)
+      setSelectedSessionForQR(session);
+      setShowQRDurationModal(true);
     } else {
       // If no session_id, navigate to class detail to create session first
-      navigate(`/classes/${session.class_id}`)
+      navigate(`/classes/${session.class_id}`);
     }
-  }
+  };
 
   // Create QR code
-  const handleCreateQR = async (lateAfterMinutes) => {
+  const handleCreateQR = async (lateAfterMinutes, locationRadius) => {
     if (!selectedSessionForQR || !selectedSessionForQR.session_id) {
-      return
+      return;
     }
 
+    // Store QR parameters and show location picker
+    setPendingQRParams({ lateAfterMinutes, locationRadius });
+    setShowLocationPicker(true);
+  };
+
+  // Handle location selected from LocationPicker
+  const handleLocationSelected = async location => {
+    if (!selectedSessionForQR || !pendingQRParams) {
+      return;
+    }
+
+    setShowLocationPicker(false);
+
     try {
-      const response = await api.post(`/sessions/${selectedSessionForQR.session_id}/attendance/start`, {
-        method: 'QR',
-        late_after_minutes: parseInt(lateAfterMinutes),
-      })
+      const response = await api.post(
+        `/sessions/${selectedSessionForQR.session_id}/attendance/start`,
+        {
+          method: 'QR',
+          late_after_minutes: parseInt(pendingQRParams.lateAfterMinutes),
+          latitude: location.latitude,
+          longitude: location.longitude,
+          location_radius: parseInt(pendingQRParams.locationRadius) || 10,
+        }
+      );
 
       if (response.data.success) {
-        const qrToken = response.data.data.qr_token
-        const protocol = window.location.protocol
-        const hostname = window.location.hostname
-        const port = window.location.port || (protocol === 'https:' ? '443' : '80')
+        const qrToken = response.data.data.qr_token;
+        const protocol = window.location.protocol;
+        const hostname = window.location.hostname;
+        const port = window.location.port || (protocol === 'https:' ? '443' : '80');
 
-        const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${qrToken}`
+        const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${qrToken}`;
 
         setQrData({
           token: qrToken,
           url: qrURL,
           expiresAt: response.data.data.expires_at,
+          locationRadius: pendingQRParams.locationRadius || 10,
+          teacherLatitude: response.data.data.teacher_latitude || location.latitude,
+          teacherLongitude: response.data.data.teacher_longitude || location.longitude,
           sessionInfo: {
             date: selectedSessionForQR.date,
             time: `${selectedSessionForQR.start_time || ''}${selectedSessionForQR.end_time ? ` - ${selectedSessionForQR.end_time}` : ''}`,
             room: selectedSessionForQR.room || 'Chưa có',
             topic: selectedSessionForQR.topic || 'Chưa có',
             class_code: selectedSessionForQR.class_code,
-            course_name: selectedSessionForQR.course_name
-          }
-        })
-        setShowQRModal(true)
-        setShowQRDurationModal(false)
-        setSelectedSessionForQR(null)
-        loadSchedule() // Refresh schedule
+            course_name: selectedSessionForQR.course_name,
+          },
+        });
+        setShowQRModal(true);
+        setShowQRDurationModal(false);
+        setSelectedSessionForQR(null);
+        setPendingQRParams(null);
+        loadSchedule(); // Refresh schedule
       }
     } catch (error) {
-      console.error('Create QR error:', error)
-      alert(error.response?.data?.message || 'Tạo QR code thất bại')
+      console.error('Create QR error:', error);
+      alert(error.response?.data?.message || 'Tạo QR code thất bại');
     }
-  }
+  };
+
+  const handleLocationPickerCancel = () => {
+    setShowLocationPicker(false);
+    setPendingQRParams(null);
+  };
 
   return (
     <div>
       {/* Header with Navigation */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-blue-600 mb-1">
-            Lịch Dạy Của Tôi
-          </h2>
-          <p className="text-gray-600 text-sm">
-            Tuần: {formatWeekRange(currentWeek)}
-          </p>
+          <h2 className="text-2xl font-semibold text-blue-600 mb-1">Lịch Dạy Của Tôi</h2>
+          <p className="text-gray-600 text-sm">Tuần: {formatWeekRange(currentWeek)}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -238,12 +258,12 @@ function TeachingSchedule() {
         {/* Header Row */}
         <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
           {daysOfWeek.map((day, index) => {
-            const weekRange = getWeekRange(currentWeek)
-            const dayDate = new Date(weekRange.monday)
-            dayDate.setDate(dayDate.getDate() + index)
-            const dayNumber = dayDate.getDate()
-            const isToday = dayDate.toDateString() === new Date().toDateString()
-            
+            const weekRange = getWeekRange(currentWeek);
+            const dayDate = new Date(weekRange.monday);
+            dayDate.setDate(dayDate.getDate() + index);
+            const dayNumber = dayDate.getDate();
+            const isToday = dayDate.toDateString() === new Date().toDateString();
+
             return (
               <div
                 key={index}
@@ -256,7 +276,7 @@ function TeachingSchedule() {
                   {dayNumber}
                 </div>
               </div>
-            )
+            );
           })}
         </div>
 
@@ -269,9 +289,9 @@ function TeachingSchedule() {
         ) : (
           <div className="grid grid-cols-7 min-h-[400px]">
             {daysOfWeek.map((day, dayIndex) => {
-              const sessions = schedule[dayIndex] || []
-              const isEmpty = sessions.length === 0
-              
+              const sessions = schedule[dayIndex] || [];
+              const isEmpty = sessions.length === 0;
+
               return (
                 <div
                   key={dayIndex}
@@ -287,31 +307,28 @@ function TeachingSchedule() {
                     sessions.map((session, index) => {
                       // All sessions should have normal color now (is_scheduled is always true for scheduled items)
                       const bgColor = getClassColor(session.class_id);
-                      
+
                       return (
                         <div
-                          key={session.session_id || `scheduled-${session.class_id}-${session.date}-${index}`}
+                          key={
+                            session.session_id ||
+                            `scheduled-${session.class_id}-${session.date}-${index}`
+                          }
                           className={`${bgColor} text-white p-3 rounded mb-2 text-sm cursor-pointer hover:opacity-90 transition shadow-sm`}
                           onClick={() => handleSessionClick(session)}
-                          title={session.session_id ? 'Click để tạo QR điểm danh' : 'Click để xem chi tiết lớp'}
+                          title={
+                            session.session_id
+                              ? 'Click để tạo QR điểm danh'
+                              : 'Click để xem chi tiết lớp'
+                          }
                         >
-                          <p className="font-semibold mb-1 truncate">
-                            {session.course_name}
-                          </p>
-                          <p className="text-xs opacity-90 mb-1">
-                            {session.course_code}
-                          </p>
-                          <p className="text-xs mb-1">
-                            Lớp: {session.class_code}
-                          </p>
+                          <p className="font-semibold mb-1 truncate">{session.course_name}</p>
+                          <p className="text-xs opacity-90 mb-1">{session.course_code}</p>
+                          <p className="text-xs mb-1">Lớp: {session.class_code}</p>
                           {session.class_name && (
-                            <p className="text-xs opacity-75 mb-1 truncate">
-                              {session.class_name}
-                            </p>
+                            <p className="text-xs opacity-75 mb-1 truncate">{session.class_name}</p>
                           )}
-                          <p className="text-xs mb-1">
-                            Phòng: {session.room}
-                          </p>
+                          <p className="text-xs mb-1">Phòng: {session.room}</p>
                           {session.start_time && (
                             <p className="text-xs mb-1">
                               {session.start_time}
@@ -319,9 +336,7 @@ function TeachingSchedule() {
                             </p>
                           )}
                           {session.periods && (
-                            <p className="text-xs opacity-90">
-                              Tiết: {session.periods}
-                            </p>
+                            <p className="text-xs opacity-90">Tiết: {session.periods}</p>
                           )}
                           {session.topic && (
                             <p className="text-xs opacity-75 mt-1 truncate" title={session.topic}>
@@ -333,7 +348,7 @@ function TeachingSchedule() {
                     })
                   )}
                 </div>
-              )
+              );
             })}
           </div>
         )}
@@ -342,7 +357,9 @@ function TeachingSchedule() {
       {/* Legend */}
       {!loading && Object.keys(schedule).some(day => schedule[day]?.length > 0) && (
         <div className="mt-4 text-sm text-gray-600">
-          <p className="mb-2">💡 Click vào từng buổi học để tạo QR điểm danh hoặc xem chi tiết lớp học</p>
+          <p className="mb-2">
+            💡 Click vào từng buổi học để tạo QR điểm danh hoặc xem chi tiết lớp học
+          </p>
         </div>
       )}
 
@@ -370,14 +387,36 @@ function TeachingSchedule() {
                   <option value="60">60 phút</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-2">
-                  Sau thời gian này, học sinh quét QR sẽ được tính là đi muộn. QR code sẽ tồn tại đến khi buổi học kết thúc.
+                  Sau thời gian này, học sinh quét QR sẽ được tính là đi muộn. QR code sẽ tồn tại
+                  đến khi buổi học kết thúc.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Bán kính cho phép điểm danh (mét)
+                </label>
+                <select
+                  id="qrLocationRadiusSelect"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  defaultValue="10"
+                >
+                  <option value="5">5 mét</option>
+                  <option value="6">6 mét</option>
+                  <option value="7">7 mét</option>
+                  <option value="8">8 mét</option>
+                  <option value="9">9 mét</option>
+                  <option value="10">10 mét</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  Học sinh phải ở trong bán kính này so với vị trí của bạn (giáo viên) để điểm danh
+                  hợp lệ. Hệ thống sẽ yêu cầu GPS khi tạo QR.
                 </p>
               </div>
               <div className="flex gap-4 justify-end">
                 <button
                   onClick={() => {
-                    setShowQRDurationModal(false)
-                    setSelectedSessionForQR(null)
+                    setShowQRDurationModal(false);
+                    setSelectedSessionForQR(null);
                   }}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
                 >
@@ -385,8 +424,9 @@ function TeachingSchedule() {
                 </button>
                 <button
                   onClick={() => {
-                    const lateAfter = document.getElementById('qrLateAfterSelect').value
-                    handleCreateQR(lateAfter)
+                    const lateAfter = document.getElementById('qrLateAfterSelect').value;
+                    const locationRadius = document.getElementById('qrLocationRadiusSelect').value;
+                    handleCreateQR(lateAfter, locationRadius);
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                 >
@@ -411,7 +451,7 @@ function TeachingSchedule() {
                 ×
               </button>
             </div>
-            
+
             <div className="space-y-4">
               {/* Session Info */}
               {qrData.sessionInfo && (
@@ -455,8 +495,8 @@ function TeachingSchedule() {
                   />
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(qrData.url)
-                      alert('✅ Đã copy URL!')
+                      navigator.clipboard.writeText(qrData.url);
+                      alert('✅ Đã copy URL!');
                     }}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap"
                     title="Copy URL"
@@ -480,8 +520,8 @@ function TeachingSchedule() {
                   />
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(qrData.token)
-                      alert('✅ Đã copy Token!')
+                      navigator.clipboard.writeText(qrData.token);
+                      alert('✅ Đã copy Token!');
                     }}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap"
                     title="Copy Token"
@@ -490,6 +530,36 @@ function TeachingSchedule() {
                   </button>
                 </div>
               </div>
+
+              {/* Teacher GPS Location */}
+              {qrData.teacherLatitude && qrData.teacherLongitude && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h4 className="font-semibold text-blue-800 mb-2">📍 Vị trí GPS nơi tạo QR:</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <a
+                        href={`https://www.google.com/maps?q=${qrData.teacherLatitude},${qrData.teacherLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline text-sm font-medium"
+                      >
+                        🗺️ Xem trên Google Maps
+                      </a>
+                    </div>
+                    <div className="text-sm text-blue-700">
+                      <p>
+                        <span className="font-medium">Tọa độ:</span>{' '}
+                        {parseFloat(qrData.teacherLatitude).toFixed(6)},{' '}
+                        {parseFloat(qrData.teacherLongitude).toFixed(6)}
+                      </p>
+                      <p>
+                        <span className="font-medium">Bán kính cho phép:</span>{' '}
+                        {qrData.locationRadius || 10}m
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Expires At */}
               {qrData.expiresAt && (
@@ -511,6 +581,10 @@ function TeachingSchedule() {
                   <li>Hoặc truy cập URL để điểm danh</li>
                   <li>Hoặc nhập token thủ công trong ứng dụng</li>
                   <li>QR code sẽ tồn tại đến khi buổi học kết thúc</li>
+                  <li>
+                    <strong>⚠️ Lưu ý:</strong> Học sinh phải bật GPS và ở trong bán kính{' '}
+                    {qrData.locationRadius || 10}m so với vị trí của bạn để điểm danh hợp lệ
+                  </li>
                 </ul>
               </div>
 
@@ -526,10 +600,16 @@ function TeachingSchedule() {
           </div>
         </div>
       )}
+
+      {/* Location Picker Modal */}
+      {showLocationPicker && (
+        <LocationPicker
+          onLocationSelected={handleLocationSelected}
+          onCancel={handleLocationPickerCancel}
+        />
+      )}
     </div>
-  )
+  );
 }
 
-export default TeachingSchedule
-
-
+export default TeachingSchedule;
