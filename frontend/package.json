@@ -4,11 +4,12 @@
   "description": "",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0 <=22.0.0",
+    "node": ">=20.19.0 <21.0.0 || >=22.12.0",
     "npm": ">=8.0.0"
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm install @rollup/rollup-linux-x64-gnu --save-optional || true",
     "build": "vite build",
     "preview": "vite preview",
     "start": "npm run build && node start.js",
