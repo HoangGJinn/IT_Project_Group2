@@ -1,6 +1,6 @@
 // Auth utility functions
 
-export const setAuthToken = (token) => {
+export const setAuthToken = token => {
   if (token) {
     localStorage.setItem('token', token);
   } else {
@@ -12,7 +12,7 @@ export const getAuthToken = () => {
   return localStorage.getItem('token');
 };
 
-export const setUser = (user) => {
+export const setUser = user => {
   if (user) {
     localStorage.setItem('user', JSON.stringify(user));
   } else {
@@ -25,10 +25,16 @@ export const getUser = () => {
   return user ? JSON.parse(user) : null;
 };
 
-export const logout = () => {
+export const logout = navigate => {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
-  window.location.href = '/login';
+  // Use React Router navigate if provided, otherwise fallback to window.location
+  if (navigate) {
+    navigate('/login', { replace: true });
+  } else {
+    // Fallback: redirect to root and let React Router handle it
+    window.location.href = window.location.origin + '/login';
+  }
 };
 
 export const isAuthenticated = () => {
@@ -39,4 +45,3 @@ export const hasRole = (user, role) => {
   if (!user || !user.roles) return false;
   return user.roles.includes(role);
 };
-
