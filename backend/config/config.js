@@ -8,7 +8,7 @@ module.exports = {
     host: process.env.DB_HOST || '127.0.0.1',
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
-    logging: false
+    logging: false,
   },
   test: {
     username: process.env.DB_USER || 'root',
@@ -17,7 +17,7 @@ module.exports = {
     host: process.env.DB_HOST || '127.0.0.1',
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
-    logging: false
+    logging: false,
   },
   production: {
     username: process.env.DB_USER,
@@ -26,7 +26,17 @@ module.exports = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
-    logging: false
-  }
+    logging: false,
+    // Production database connection pool settings
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
+    // Retry configuration
+    retry: {
+      max: 3,
+    },
+  },
 };
-

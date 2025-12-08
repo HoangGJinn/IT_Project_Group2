@@ -4,7 +4,7 @@
   "description": "Hệ Thống Quản Lý Điểm Danh - Attendance Management System",
   "private": true,
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "node -e \"try { if (!process.env.CI && !process.env.NODE_ENV && require('fs').existsSync('node_modules/husky')) require('husky').install() } catch(e) {}\"",
     "lint": "npm run lint --workspace=backend && npm run lint --workspace=frontend",
     "format": "prettier --write \"**/*.{js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,json,md}\""
