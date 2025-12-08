@@ -1,39 +1,39 @@
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { FaBell, FaUser, FaBars, FaSignOutAlt } from 'react-icons/fa'
-import { useState, useEffect, useRef } from 'react'
-import { getUser, logout } from '../utils/auth'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { FaBell, FaUser, FaBars, FaSignOutAlt } from 'react-icons/fa';
+import { useState, useEffect, useRef } from 'react';
+import { getUser, logout } from '../utils/auth';
 
 function Layout() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [user, setUser] = useState(null)
-  const [showDropdown, setShowDropdown] = useState(false)
-  const dropdownRef = useRef(null)
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
-    setUser(getUser())
-  }, [])
+    setUser(getUser());
+  }, []);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
+    const handleClickOutside = event => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowDropdown(false)
+        setShowDropdown(false);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLogout = () => {
-    logout()
-  }
+    logout(navigate);
+  };
 
-  const isActive = (path) => {
+  const isActive = path => {
     if (path === '/classes') {
-      return location.pathname === '/classes' || location.pathname.startsWith('/classes/')
+      return location.pathname === '/classes' || location.pathname.startsWith('/classes/');
     }
-    return location.pathname === path
-  }
+    return location.pathname === path;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -79,7 +79,7 @@ function Layout() {
             <div className="flex items-center space-x-4">
               <FaBell className="text-gray-600 text-xl cursor-pointer hover:text-blue-600" />
               <div className="relative" ref={dropdownRef}>
-                <div 
+                <div
                   className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 px-3 py-2 rounded-lg transition"
                   onClick={() => setShowDropdown(!showDropdown)}
                 >
@@ -88,14 +88,14 @@ function Layout() {
                     {user?.full_name || 'Giáo Viên'}
                   </span>
                 </div>
-                
+
                 {/* Dropdown Menu */}
                 {showDropdown && (
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
                     <button
                       onClick={() => {
-                        navigate('/account')
-                        setShowDropdown(false)
+                        navigate('/account');
+                        setShowDropdown(false);
                       }}
                       className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition flex items-center gap-2"
                     >
@@ -124,9 +124,7 @@ function Layout() {
         <Outlet />
       </main>
     </div>
-  )
+  );
 }
 
-export default Layout
-
-
+export default Layout;
