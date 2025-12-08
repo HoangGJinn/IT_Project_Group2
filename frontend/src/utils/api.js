@@ -5,7 +5,7 @@ const getAPIURL = () => {
   // Check if accessed via ngrok FIRST (before checking env vars)
   const hostname = window.location.hostname;
   const isNgrok = /.*\.(ngrok\.io|ngrok-free\.app|ngrok\.app|ngrok-free\.dev)$/.test(hostname);
-  
+
   // If accessed via ngrok, ALWAYS use Vite proxy (relative path)
   // This works because ngrok tunnels to localhost:3000, and Vite proxy forwards /api to localhost:5000
   if (isNgrok) {
@@ -18,9 +18,18 @@ const getAPIURL = () => {
   }
 
   // Default: use Vite proxy in dev or full URL in production
-  return import.meta.env.DEV 
-    ? '/api' 
-    : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api`;
+  if (import.meta.env.DEV) {
+    return '/api';
+  }
+
+  // In production, must have VITE_API_URL or VITE_API_BASE_URL set
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return `${import.meta.env.VITE_API_BASE_URL}/api`;
+  }
+
+  // Fallback - should not happen in production if env vars are set correctly
+  console.error('⚠️ VITE_API_URL or VITE_API_BASE_URL not set! Using localhost fallback.');
+  return 'http://localhost:5000/api';
 };
 
 const API_URL = getAPIURL();
@@ -48,7 +57,7 @@ const api = axios.create({
 
 // Request interceptor - Add token to requests
 api.interceptors.request.use(
-  (config) => {
+  config => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -59,12 +68,12 @@ api.interceptors.request.use(
         method: config.method?.toUpperCase(),
         url: config.url,
         fullURL: `${config.baseURL}${config.url}`,
-        hostname: window.location.hostname
+        hostname: window.location.hostname,
       });
     }
     return config;
   },
-  (error) => {
+  error => {
     console.error('❌ Request Error:', error);
     return Promise.reject(error);
   }
@@ -72,10 +81,10 @@ api.interceptors.request.use(
 
 // Response interceptor - Handle errors
 api.interceptors.response.use(
-  (response) => {
+  response => {
     return response;
   },
-  (error) => {
+  error => {
     // Log detailed error in development
     if (import.meta.env.DEV) {
       console.error('❌ API Error:', {
@@ -85,7 +94,7 @@ api.interceptors.response.use(
         url: error.config?.url,
         fullURL: error.config ? `${error.config.baseURL}${error.config.url}` : 'unknown',
         data: error.response?.data,
-        networkError: !error.response ? 'Network error - backend không thể truy cập được' : null
+        networkError: !error.response ? 'Network error - backend không thể truy cập được' : null,
       });
     }
 
@@ -100,4 +109,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
