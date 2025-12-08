@@ -4,9 +4,11 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const isProduction = mode === 'production';
 
   return {
     plugins: [react()],
+    // Server config chỉ dùng trong development
     server: {
       host: '0.0.0.0', // Cho phép ngrok tunnel
       port: parseInt(env.VITE_PORT) || 3000,
@@ -18,7 +20,7 @@ export default defineConfig(({ mode }) => {
         '.ngrok.app',
         '.ngrok-free.dev',
         'localhost',
-        '127.0.0.1'
+        '127.0.0.1',
       ],
       proxy: {
         '/api': {
@@ -36,6 +38,22 @@ export default defineConfig(({ mode }) => {
             proxy.on('proxyRes', (proxyRes, req, _res) => {
               console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
             });
+          },
+        },
+      },
+    },
+    // Build optimizations cho production
+    build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
+      sourcemap: !isProduction, // Chỉ tạo sourcemap trong development
+      minify: isProduction ? 'esbuild' : false,
+      chunkSizeWarningLimit: 1000, // Tăng limit để tránh warning
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'ui-vendor': ['react-bootstrap', 'bootstrap'],
           },
         },
       },

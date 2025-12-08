@@ -7,25 +7,37 @@ const app = express();
 // CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    const allowedOrigins = [
-      process.env.CORS_ORIGIN,
-      process.env.FRONTEND_URL,
-      'http://localhost:3000',
-      'http://localhost:5173', // Vite default port
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173',
-    ].filter(Boolean); // Remove undefined values
+    const isProduction = process.env.NODE_ENV === 'production';
 
-    // In development, allow ngrok and localhost
-    if (process.env.NODE_ENV !== 'production') {
-      if (!origin) {
-        return callback(null, true);
-      }
+    // Allow requests with no origin (like mobile apps or curl requests) - only in development
+    if (!origin && !isProduction) {
+      return callback(null, true);
+    }
+
+    // In production, require origin
+    if (isProduction && !origin) {
+      return callback(new Error('CORS: Origin is required in production'));
+    }
+
+    // Build allowed origins list
+    const allowedOrigins = [process.env.CORS_ORIGIN, process.env.FRONTEND_URL].filter(Boolean); // Remove undefined values
+
+    // In development, allow localhost and ngrok
+    if (!isProduction) {
+      const localhostOrigins = [
+        'http://localhost:3000',
+        'http://localhost:5173', // Vite default port
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+      ];
+      allowedOrigins.push(...localhostOrigins);
 
       // Allow ngrok domains (both old and new ngrok domains)
-      const isNgrok = /^https?:\/\/.*\.(ngrok\.io|ngrok-free\.app|ngrok\.app|ngrok-free\.dev)(:\d+)?$/.test(origin);
-      
+      const isNgrok =
+        /^https?:\/\/.*\.(ngrok\.io|ngrok-free\.app|ngrok\.app|ngrok-free\.dev)(:\d+)?$/.test(
+          origin
+        );
+
       // Allow localhost
       const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
@@ -34,7 +46,18 @@ const corsOptions = {
       }
     }
 
-    if (!origin || allowedOrigins.includes(origin)) {
+    // In production, only allow explicitly configured origins
+    if (isProduction) {
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        console.warn(`CORS blocked origin in production: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
+      }
+    }
+
+    // Fallback for development
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn(`CORS blocked origin: ${origin}`);
