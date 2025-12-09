@@ -203,6 +203,7 @@ function AttendanceHistory() {
               ) : (
                 attendanceRecords.map((record, index) => {
                   const statusInfo = getStatusInfo(record.status);
+                  const StatusIcon = statusInfo.icon;
                   return (
                     <tr
                       key={record.attendance_record_id}
