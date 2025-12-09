@@ -120,17 +120,6 @@ function ClassDetail() {
     }
   }, [activeTab]);
 
-  // Auto-refresh sessions every 30 seconds to update status (ONGOING -> FINISHED)
-  useEffect(() => {
-    if (activeTab === 'upcoming' || activeTab === 'finished') {
-      const interval = setInterval(() => {
-        fetchSessions();
-      }, 30000); // Refresh every 30 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [activeTab]);
-
   const fetchClassDetail = async () => {
     try {
       const response = await api.get(`/classes/${id}`);
