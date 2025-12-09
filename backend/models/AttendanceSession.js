@@ -41,8 +41,8 @@ module.exports = sequelize => {
       location_radius: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        defaultValue: 10,
-        comment: 'Bán kính cho phép điểm danh (mét), mặc định 10m',
+        defaultValue: 15,
+        comment: 'Bán kính cho phép điểm danh (mét), mặc định 15m (phạm vi 10-20m)',
       },
     },
     {

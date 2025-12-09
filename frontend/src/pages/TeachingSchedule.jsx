@@ -21,7 +21,7 @@ function TeachingSchedule() {
     token: '',
     url: '',
     expiresAt: null,
-    locationRadius: 10,
+    locationRadius: 15,
     teacherLatitude: null,
     teacherLongitude: null,
     sessionInfo: null,
@@ -168,7 +168,7 @@ function TeachingSchedule() {
           late_after_minutes: parseInt(pendingQRParams.lateAfterMinutes),
           latitude: location.latitude,
           longitude: location.longitude,
-          location_radius: parseInt(pendingQRParams.locationRadius) || 10,
+          location_radius: parseInt(pendingQRParams.locationRadius) || 15,
         }
       );
 
@@ -184,7 +184,7 @@ function TeachingSchedule() {
           token: qrToken,
           url: qrURL,
           expiresAt: response.data.data.expires_at,
-          locationRadius: pendingQRParams.locationRadius || 10,
+          locationRadius: pendingQRParams.locationRadius || 15,
           teacherLatitude: response.data.data.teacher_latitude || location.latitude,
           teacherLongitude: response.data.data.teacher_longitude || location.longitude,
           sessionInfo: {
@@ -400,14 +400,19 @@ function TeachingSchedule() {
                 <select
                   id="qrLocationRadiusSelect"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  defaultValue="10"
+                  defaultValue="15"
                 >
-                  <option value="5">5 mét</option>
-                  <option value="6">6 mét</option>
-                  <option value="7">7 mét</option>
-                  <option value="8">8 mét</option>
-                  <option value="9">9 mét</option>
                   <option value="10">10 mét</option>
+                  <option value="11">11 mét</option>
+                  <option value="12">12 mét</option>
+                  <option value="13">13 mét</option>
+                  <option value="14">14 mét</option>
+                  <option value="15">15 mét</option>
+                  <option value="16">16 mét</option>
+                  <option value="17">17 mét</option>
+                  <option value="18">18 mét</option>
+                  <option value="19">19 mét</option>
+                  <option value="20">20 mét</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-2">
                   Học sinh phải ở trong bán kính này so với vị trí của bạn (giáo viên) để điểm danh
@@ -556,7 +561,7 @@ function TeachingSchedule() {
                       </p>
                       <p>
                         <span className="font-medium">Bán kính cho phép:</span>{' '}
-                        {qrData.locationRadius || 10}m
+                        {qrData.locationRadius || 15}m
                       </p>
                     </div>
                   </div>

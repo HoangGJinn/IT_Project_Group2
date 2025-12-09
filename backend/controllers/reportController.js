@@ -180,7 +180,8 @@ const getClassReport = async (req, res) => {
     }
 
     // Get all sessions for this class (both FINISHED and ONGOING)
-    const sessions = await Session.findAll({
+    // We need ONGOING to get attendance records, but total sessions should only count FINISHED
+    const allSessions = await Session.findAll({
       where: {
         class_id: classId,
         status: { [Op.in]: ['FINISHED', 'ONGOING'] },
@@ -188,9 +189,13 @@ const getClassReport = async (req, res) => {
       order: [['date', 'ASC']],
     });
 
-    const sessionIds = sessions.map(s => s.session_id);
+    // Only FINISHED sessions count for total sessions (to match student view)
+    const finishedSessions = allSessions.filter(s => s.status === 'FINISHED');
+    const totalFinishedSessions = finishedSessions.length;
 
-    // Get attendance records
+    const sessionIds = allSessions.map(s => s.session_id);
+
+    // Get attendance records from both FINISHED and ONGOING sessions
     let attendanceSessions = [];
     if (sessionIds.length > 0) {
       attendanceSessions = await AttendanceSession.findAll({
@@ -202,9 +207,9 @@ const getClassReport = async (req, res) => {
 
     const attendanceSessionIds = attendanceSessions.map(as => as.attendance_session_id);
 
-    let records = [];
+    let allRecords = [];
     if (attendanceSessionIds.length > 0) {
-      records = await AttendanceRecord.findAll({
+      allRecords = await AttendanceRecord.findAll({
         where: {
           attendance_session_id: { [Op.in]: attendanceSessionIds },
         },
@@ -235,7 +240,14 @@ const getClassReport = async (req, res) => {
       });
     }
 
-    // Also need to calculate total sessions per student (including sessions without attendance records)
+    // Filter records to only include FINISHED sessions for statistics
+    // (ONGOING sessions with attendance are included, but only FINISHED count toward total)
+    const records = allRecords.filter(r => {
+      const sessionStatus = r.attendanceSession?.session?.status;
+      // Include FINISHED sessions and ONGOING sessions (for students who already checked in)
+      return sessionStatus === 'FINISHED' || sessionStatus === 'ONGOING';
+    });
+
     // Get all enrolled students
     const enrollments = await Enrollment.findAll({
       where: { class_id: classId, status: 'ENROLLED' },
@@ -254,33 +266,31 @@ const getClassReport = async (req, res) => {
       ],
     });
 
-    // Calculate total sessions per student (FINISHED + ONGOING with attendance)
+    // Calculate total sessions per student (only FINISHED sessions, to match student view)
     const studentTotalSessions = new Map();
     enrollments.forEach(enrollment => {
       const studentId = enrollment.student_id;
-      // Count FINISHED sessions
-      const finishedCount = sessions.filter(s => s.status === 'FINISHED').length;
-      // Count distinct ONGOING sessions where this student has attendance record
-      const ongoingSessionIds = new Set();
-      records.forEach(r => {
-        if (r.student_id === studentId && r.attendanceSession?.session?.status === 'ONGOING') {
-          ongoingSessionIds.add(r.attendanceSession.session.session_id);
-        }
-      });
-      studentTotalSessions.set(studentId, finishedCount + ongoingSessionIds.size);
+      // Only count FINISHED sessions (to match student view calculation)
+      studentTotalSessions.set(studentId, totalFinishedSessions);
     });
 
-    // Calculate overview
-    const total = records.length;
-    const onTime = records.filter(r => r.status === 'PRESENT').length;
-    const late = records.filter(r => r.status === 'LATE').length;
-    const absent = records.filter(r => r.status === 'ABSENT').length;
+    // Calculate overview - count attendance from both FINISHED and ONGOING sessions
+    // (to match student view which counts all attendance records, but total only counts FINISHED)
+    const allAttendanceRecords = records.filter(r => r.status === 'PRESENT' || r.status === 'LATE');
+    const totalRecords = allAttendanceRecords.length;
+    const onTime = allAttendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const late = allAttendanceRecords.filter(r => r.status === 'LATE').length;
+    // Absent is calculated as: total possible attendances (FINISHED only) - actual attendances
+    const totalStudents = enrollments.length;
+    const totalPossibleAttendances = totalFinishedSessions * totalStudents;
+    const totalAttended = onTime + late;
+    const absent = Math.max(0, totalPossibleAttendances - totalAttended);
 
-    // Calculate validation stats
-    const validRecords = records.filter(r => r.is_valid === 1).length;
-    const invalidRecords = records.filter(r => r.is_valid === 0).length;
-    const pendingRecords = records.filter(r => r.is_valid === null).length;
-    const recordsWithValidation = records.filter(r => r.is_valid !== null).length;
+    // Calculate validation stats (from all attendance records)
+    const validRecords = allAttendanceRecords.filter(r => r.is_valid === 1).length;
+    const invalidRecords = allAttendanceRecords.filter(r => r.is_valid === 0).length;
+    const pendingRecords = allAttendanceRecords.filter(r => r.is_valid === null).length;
+    const recordsWithValidation = allAttendanceRecords.filter(r => r.is_valid !== null).length;
 
     // Group by student
     const studentMap = new Map();
@@ -296,7 +306,6 @@ const getClassReport = async (req, res) => {
           total: studentTotalSessions.get(studentId) || 0,
           onTime: 0,
           late: 0,
-          absent: 0,
           valid: 0,
           invalid: 0,
           pending: 0,
@@ -304,9 +313,15 @@ const getClassReport = async (req, res) => {
       }
     });
 
-    // Count attendance records
+    // Count attendance records from both FINISHED and ONGOING sessions
+    // (to match student view which counts all attendance records)
     records.forEach(record => {
       const studentId = record.student_id;
+      // Only count PRESENT and LATE records (to match student view)
+      if (record.status !== 'PRESENT' && record.status !== 'LATE') {
+        return;
+      }
+
       if (!studentMap.has(studentId)) {
         studentMap.set(studentId, {
           student_id: studentId,
@@ -315,7 +330,6 @@ const getClassReport = async (req, res) => {
           total: studentTotalSessions.get(studentId) || 0,
           onTime: 0,
           late: 0,
-          absent: 0,
           valid: 0,
           invalid: 0,
           pending: 0,
@@ -326,8 +340,6 @@ const getClassReport = async (req, res) => {
         student.onTime++;
       } else if (record.status === 'LATE') {
         student.late++;
-      } else if (record.status === 'ABSENT') {
-        student.absent++;
       }
       // Count validation status
       if (record.is_valid === 1) {
@@ -341,6 +353,8 @@ const getClassReport = async (req, res) => {
 
     const students = Array.from(studentMap.values()).map(s => {
       const attended = s.onTime + s.late;
+      // Absent = total sessions - attended sessions
+      const absentCount = s.total - attended;
       return {
         student_id: s.student_id,
         student_code: s.student_code,
@@ -348,7 +362,7 @@ const getClassReport = async (req, res) => {
         total_sessions: s.total,
         on_time: s.onTime,
         late: s.late,
-        absent: s.absent,
+        absent: absentCount,
         attendance_rate: s.total > 0 ? ((attended / s.total) * 100).toFixed(1) + '%' : '0%',
         valid_count: s.valid,
         invalid_count: s.invalid,
@@ -369,11 +383,18 @@ const getClassReport = async (req, res) => {
           semester: classData.semester,
         },
         overview: {
-          total_sessions: sessions.length,
-          total_records: total,
-          on_time: total > 0 ? Math.round((onTime / total) * 100) : 0,
-          late: total > 0 ? Math.round((late / total) * 100) : 0,
-          absent: total > 0 ? Math.round((absent / total) * 100) : 0,
+          total_sessions: totalFinishedSessions,
+          total_records: totalRecords,
+          on_time:
+            totalPossibleAttendances > 0
+              ? Math.round((onTime / totalPossibleAttendances) * 100)
+              : 0,
+          late:
+            totalPossibleAttendances > 0 ? Math.round((late / totalPossibleAttendances) * 100) : 0,
+          absent:
+            totalPossibleAttendances > 0
+              ? Math.round((absent / totalPossibleAttendances) * 100)
+              : 0,
           on_time_count: onTime,
           late_count: late,
           absent_count: absent,
@@ -385,7 +406,7 @@ const getClassReport = async (req, res) => {
             recordsWithValidation > 0
               ? Math.round((invalidRecords / recordsWithValidation) * 100)
               : 0,
-          pending: total > 0 ? Math.round((pendingRecords / total) * 100) : 0,
+          pending: totalRecords > 0 ? Math.round((pendingRecords / totalRecords) * 100) : 0,
           valid_count: validRecords,
           invalid_count: invalidRecords,
           pending_count: pendingRecords,

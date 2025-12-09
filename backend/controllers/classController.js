@@ -808,20 +808,25 @@ const getAllAttendanceRecords = async (req, res) => {
       let locationValid = null;
       let distance = null;
 
-      // Check if location is valid (if class has location set)
-      if (classData.latitude && classData.longitude) {
+      // Check if location is valid (use attendanceSession location and radius)
+      const attendanceSession = recordData.attendanceSession;
+      if (
+        attendanceSession &&
+        attendanceSession.teacher_latitude &&
+        attendanceSession.teacher_longitude
+      ) {
         if (recordData.latitude && recordData.longitude) {
-          // Student has GPS, check distance
-          const radius = classData.location_radius || 100;
-          const classLat = parseFloat(classData.latitude);
-          const classLon = parseFloat(classData.longitude);
+          // Student has GPS, check distance from teacher's location
+          const radius = attendanceSession.location_radius || 15;
+          const teacherLat = parseFloat(attendanceSession.teacher_latitude);
+          const teacherLon = parseFloat(attendanceSession.teacher_longitude);
           const recordLat = parseFloat(recordData.latitude);
           const recordLon = parseFloat(recordData.longitude);
 
-          distance = calculateDistance(classLat, classLon, recordLat, recordLon);
+          distance = calculateDistance(teacherLat, teacherLon, recordLat, recordLon);
           locationValid = distance <= radius;
         } else {
-          // Class requires location but student doesn't have GPS - invalid
+          // Teacher location set but student doesn't have GPS - invalid
           locationValid = false;
         }
       }
@@ -866,7 +871,7 @@ const getAllAttendanceRecords = async (req, res) => {
         no_gps_reason: recordData.no_gps_reason,
         is_valid: isValidValue, // Use the actual database value
         location_valid: locationValid, // Keep for backward compatibility
-        distance_from_class: distance ? Math.round(distance) : null,
+        distance_from_teacher: distance ? Math.round(distance) : null,
       };
     });
 
