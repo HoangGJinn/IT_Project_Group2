@@ -33,6 +33,8 @@ function ClassDetail() {
   const [allAttendanceRecords, setAllAttendanceRecords] = useState([]);
   const [allAttendanceLoading, setAllAttendanceLoading] = useState(false);
   const [attendanceData, setAttendanceData] = useState(null);
+  const [selectedSessionFilter, setSelectedSessionFilter] = useState('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState('all');
 
   // Class Report
   const [classReport, setClassReport] = useState(null);
@@ -75,7 +77,7 @@ function ClassDetail() {
     token: '',
     url: '',
     expiresAt: null,
-    locationRadius: 10,
+    locationRadius: 15,
     teacherLatitude: null,
     teacherLongitude: null,
     sessionInfo: null,
@@ -192,7 +194,7 @@ function ClassDetail() {
           late_after_minutes: parseInt(pendingQRParams.lateAfterMinutes),
           latitude: location.latitude,
           longitude: location.longitude,
-          location_radius: parseInt(pendingQRParams.locationRadius) || 10,
+          location_radius: parseInt(pendingQRParams.locationRadius) || 15,
         }
       );
 
@@ -208,7 +210,7 @@ function ClassDetail() {
           token: qrToken,
           url: qrURL,
           expiresAt: response.data.data.expires_at,
-          locationRadius: pendingQRParams.locationRadius || 10,
+          locationRadius: pendingQRParams.locationRadius || 15,
           teacherLatitude: response.data.data.teacher_latitude || location.latitude,
           teacherLongitude: response.data.data.teacher_longitude || location.longitude,
           sessionInfo: {
@@ -280,6 +282,9 @@ function ClassDetail() {
       if (response.data.success) {
         setAttendanceData(response.data.data);
         setAllAttendanceRecords(response.data.data.records || []);
+        // Reset filters when fetching new data
+        setSelectedSessionFilter('all');
+        setSelectedDateFilter('all');
       }
     } catch (error) {
       console.error('Fetch all attendance records error:', error);
@@ -1482,37 +1487,227 @@ function ClassDetail() {
 
           {activeTab === 'attendance' && (
             <div>
-              <div className="mb-6 flex justify-between items-center">
-                <h3 className="text-xl font-semibold text-gray-800">Chi Tiết Điểm Danh</h3>
-                {attendanceData && (
-                  <div className="flex gap-4 text-sm">
-                    <div className="bg-green-50 px-3 py-2 rounded-lg">
-                      <span className="text-gray-600">Đúng giờ: </span>
-                      <span className="font-semibold text-green-600">
-                        {attendanceData.stats.present}
-                      </span>
+              <div className="mb-6 flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xl font-semibold text-gray-800">Chi Tiết Điểm Danh</h3>
+                  {attendanceData && (
+                    <div className="flex gap-4 text-sm">
+                      <div className="bg-green-50 px-3 py-2 rounded-lg">
+                        <span className="text-gray-600">Đúng giờ: </span>
+                        <span className="font-semibold text-green-600">
+                          {(() => {
+                            let filtered = allAttendanceRecords;
+                            if (selectedSessionFilter !== 'all') {
+                              filtered = filtered.filter(
+                                r => r.session?.session_id === parseInt(selectedSessionFilter)
+                              );
+                            }
+                            if (selectedDateFilter !== 'all') {
+                              filtered = filtered.filter(r => {
+                                const recordDate = r.session?.date
+                                  ? new Date(r.session.date).toISOString().split('T')[0]
+                                  : null;
+                                return recordDate === selectedDateFilter;
+                              });
+                            }
+                            return filtered.filter(r => r.status === 'PRESENT').length;
+                          })()}
+                        </span>
+                      </div>
+                      <div className="bg-yellow-50 px-3 py-2 rounded-lg">
+                        <span className="text-gray-600">Muộn: </span>
+                        <span className="font-semibold text-yellow-600">
+                          {(() => {
+                            let filtered = allAttendanceRecords;
+                            if (selectedSessionFilter !== 'all') {
+                              filtered = filtered.filter(
+                                r => r.session?.session_id === parseInt(selectedSessionFilter)
+                              );
+                            }
+                            if (selectedDateFilter !== 'all') {
+                              filtered = filtered.filter(r => {
+                                const recordDate = r.session?.date
+                                  ? new Date(r.session.date).toISOString().split('T')[0]
+                                  : null;
+                                return recordDate === selectedDateFilter;
+                              });
+                            }
+                            return filtered.filter(r => r.status === 'LATE').length;
+                          })()}
+                        </span>
+                      </div>
+                      {attendanceData.class.latitude && attendanceData.class.longitude && (
+                        <>
+                          <div className="bg-blue-50 px-3 py-2 rounded-lg">
+                            <span className="text-gray-600">Hợp lệ: </span>
+                            <span className="font-semibold text-blue-600">
+                              {(() => {
+                                let filtered = allAttendanceRecords;
+                                if (selectedSessionFilter !== 'all') {
+                                  filtered = filtered.filter(
+                                    r => r.session?.session_id === parseInt(selectedSessionFilter)
+                                  );
+                                }
+                                if (selectedDateFilter !== 'all') {
+                                  filtered = filtered.filter(r => {
+                                    const recordDate = r.session?.date
+                                      ? new Date(r.session.date).toISOString().split('T')[0]
+                                      : null;
+                                    return recordDate === selectedDateFilter;
+                                  });
+                                }
+                                return filtered.filter(r => r.location_valid === true).length;
+                              })()}
+                            </span>
+                          </div>
+                          <div className="bg-red-50 px-3 py-2 rounded-lg">
+                            <span className="text-gray-600">Không hợp lệ: </span>
+                            <span className="font-semibold text-red-600">
+                              {(() => {
+                                let filtered = allAttendanceRecords;
+                                if (selectedSessionFilter !== 'all') {
+                                  filtered = filtered.filter(
+                                    r => r.session?.session_id === parseInt(selectedSessionFilter)
+                                  );
+                                }
+                                if (selectedDateFilter !== 'all') {
+                                  filtered = filtered.filter(r => {
+                                    const recordDate = r.session?.date
+                                      ? new Date(r.session.date).toISOString().split('T')[0]
+                                      : null;
+                                    return recordDate === selectedDateFilter;
+                                  });
+                                }
+                                return filtered.filter(r => r.location_valid === false).length;
+                              })()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="bg-yellow-50 px-3 py-2 rounded-lg">
-                      <span className="text-gray-600">Muộn: </span>
-                      <span className="font-semibold text-yellow-600">
-                        {attendanceData.stats.late}
-                      </span>
+                  )}
+                </div>
+
+                {/* Filter by Session and Date */}
+                {allAttendanceRecords.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm font-medium text-gray-700">
+                        Lọc theo buổi học:
+                      </label>
+                      <select
+                        value={selectedSessionFilter}
+                        onChange={e => {
+                          setSelectedSessionFilter(e.target.value);
+                          // Reset date filter when changing session filter
+                          if (e.target.value !== 'all') {
+                            setSelectedDateFilter('all');
+                          }
+                        }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-w-[250px]"
+                      >
+                        <option value="all">Tất cả các buổi</option>
+                        {(() => {
+                          // Get unique sessions from attendance records
+                          const sessionMap = new Map();
+                          allAttendanceRecords.forEach(record => {
+                            const session = record.session;
+                            if (session && session.session_id) {
+                              if (!sessionMap.has(session.session_id)) {
+                                sessionMap.set(session.session_id, {
+                                  session_id: session.session_id,
+                                  date: session.date,
+                                  start_time: session.start_time,
+                                  end_time: session.end_time,
+                                  room: session.room,
+                                  topic: session.topic,
+                                });
+                              }
+                            }
+                          });
+                          // Sort by date (newest first)
+                          const sortedSessions = Array.from(sessionMap.values()).sort((a, b) => {
+                            const dateA = new Date(a.date);
+                            const dateB = new Date(b.date);
+                            return dateB - dateA;
+                          });
+                          return sortedSessions.map(session => {
+                            const dateStr = session.date
+                              ? new Date(session.date).toLocaleDateString('vi-VN')
+                              : 'N/A';
+                            const timeStr = session.start_time
+                              ? session.end_time
+                                ? `${session.start_time} - ${session.end_time}`
+                                : session.start_time
+                              : '';
+                            const label = session.topic
+                              ? `${dateStr} ${timeStr} - ${session.topic}`
+                              : `${dateStr} ${timeStr}`;
+                            return (
+                              <option key={session.session_id} value={session.session_id}>
+                                {label}
+                              </option>
+                            );
+                          });
+                        })()}
+                      </select>
                     </div>
-                    {attendanceData.class.latitude && attendanceData.class.longitude && (
-                      <>
-                        <div className="bg-blue-50 px-3 py-2 rounded-lg">
-                          <span className="text-gray-600">Hợp lệ: </span>
-                          <span className="font-semibold text-blue-600">
-                            {attendanceData.stats.valid_location}
-                          </span>
-                        </div>
-                        <div className="bg-red-50 px-3 py-2 rounded-lg">
-                          <span className="text-gray-600">Không hợp lệ: </span>
-                          <span className="font-semibold text-red-600">
-                            {attendanceData.stats.invalid_location}
-                          </span>
-                        </div>
-                      </>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm font-medium text-gray-700">Lọc theo ngày:</label>
+                      <select
+                        value={selectedDateFilter}
+                        onChange={e => {
+                          setSelectedDateFilter(e.target.value);
+                          // Reset session filter when changing date filter
+                          if (e.target.value !== 'all') {
+                            setSelectedSessionFilter('all');
+                          }
+                        }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm min-w-[200px]"
+                      >
+                        <option value="all">Tất cả các ngày</option>
+                        {(() => {
+                          // Get unique dates from attendance records
+                          const dateMap = new Map();
+                          allAttendanceRecords.forEach(record => {
+                            if (record.session?.date) {
+                              const date = new Date(record.session.date);
+                              const dateKey = date.toISOString().split('T')[0];
+                              const dateLabel = date.toLocaleDateString('vi-VN', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              });
+                              if (!dateMap.has(dateKey)) {
+                                dateMap.set(dateKey, dateLabel);
+                              }
+                            }
+                          });
+                          // Sort by date (newest first)
+                          const sortedDates = Array.from(dateMap.entries()).sort((a, b) => {
+                            return new Date(b[0]) - new Date(a[0]);
+                          });
+                          return sortedDates.map(([dateKey, dateLabel]) => (
+                            <option key={dateKey} value={dateKey}>
+                              {dateLabel}
+                            </option>
+                          ));
+                        })()}
+                      </select>
+                    </div>
+
+                    {(selectedSessionFilter !== 'all' || selectedDateFilter !== 'all') && (
+                      <button
+                        onClick={() => {
+                          setSelectedSessionFilter('all');
+                          setSelectedDateFilter('all');
+                        }}
+                        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 underline"
+                      >
+                        Xóa bộ lọc
+                      </button>
                     )}
                   </div>
                 )}
@@ -1527,297 +1722,340 @@ function ClassDetail() {
                   <p className="text-gray-600">Chưa có điểm danh nào</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {allAttendanceRecords.map(record => (
-                    <div
-                      key={record.record_id}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-3">
-                            <h4 className="font-semibold text-gray-800 text-lg">
-                              {record.student.full_name}
-                            </h4>
-                            <span className="text-sm text-gray-500">
-                              ({record.student.student_code})
-                            </span>
-                            <span
-                              className={`px-3 py-1 rounded text-xs font-semibold ${
-                                record.status === 'PRESENT'
-                                  ? 'bg-green-100 text-green-700'
-                                  : record.status === 'LATE'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {record.status === 'PRESENT'
-                                ? '✅ Đúng giờ'
-                                : record.status === 'LATE'
-                                  ? '⏰ Muộn'
-                                  : '❌ Vắng'}
-                            </span>
-                            {/* Hiển thị trạng thái vị trí nếu lớp có vị trí */}
-                            {attendanceData?.class.latitude && attendanceData?.class.longitude && (
-                              <span
-                                className={`px-3 py-1 rounded text-xs font-semibold ${
-                                  record.location_valid === true
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : record.location_valid === false
-                                      ? 'bg-red-100 text-red-700'
-                                      : 'bg-gray-100 text-gray-700'
-                                }`}
-                              >
-                                {record.location_valid === true
-                                  ? '✅ Vị trí hợp lệ'
-                                  : record.location_valid === false
-                                    ? '❌ Vị trí không hợp lệ'
-                                    : '⚠️ Không có GPS'}
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
-                            <div>
-                              <span className="font-medium">Buổi học:</span>{' '}
-                              {record.session?.date
-                                ? new Date(record.session.date).toLocaleDateString('vi-VN')
-                                : 'N/A'}{' '}
-                              {record.session?.start_time || ''}
-                              {record.session?.end_time ? ` - ${record.session.end_time}` : ''}
-                            </div>
-                            <div>
-                              <span className="font-medium">Phòng:</span>{' '}
-                              {record.session?.room || 'N/A'}
-                            </div>
-                            <div>
-                              <span className="font-medium">Thời gian điểm danh:</span>{' '}
-                              {record.checkin_time
-                                ? new Date(record.checkin_time).toLocaleString('vi-VN')
-                                : 'N/A'}
-                            </div>
-                            <div>
-                              <span className="font-medium">Nguồn:</span> {record.source || 'N/A'}
-                            </div>
-                            {record.session?.topic && (
-                              <div className="md:col-span-2">
-                                <span className="font-medium">Chủ đề:</span> {record.session.topic}
-                              </div>
-                            )}
-                          </div>
-                          {/* Hiển thị thông tin vị trí */}
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <p className="font-medium text-gray-700 mb-2">📍 Thông tin vị trí:</p>
-                            {record.latitude && record.longitude ? (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                  <a
-                                    href={`https://www.google.com/maps?q=${record.latitude},${record.longitude}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:text-blue-800 underline text-sm font-medium"
-                                  >
-                                    🗺️ Xem trên Google Maps
-                                  </a>
-                                  <span className="text-gray-500 text-xs">
-                                    ({parseFloat(record.latitude).toFixed(6)},{' '}
-                                    {parseFloat(record.longitude).toFixed(6)})
-                                  </span>
-                                </div>
+                (() => {
+                  // Filter records based on selected session and date
+                  let filteredRecords = allAttendanceRecords;
+
+                  if (selectedSessionFilter !== 'all') {
+                    filteredRecords = filteredRecords.filter(
+                      r => r.session?.session_id === parseInt(selectedSessionFilter)
+                    );
+                  }
+
+                  if (selectedDateFilter !== 'all') {
+                    filteredRecords = filteredRecords.filter(r => {
+                      const recordDate = r.session?.date
+                        ? new Date(r.session.date).toISOString().split('T')[0]
+                        : null;
+                      return recordDate === selectedDateFilter;
+                    });
+                  }
+
+                  if (filteredRecords.length === 0) {
+                    return (
+                      <div className="text-center py-12 bg-gray-50 rounded-lg">
+                        <p className="text-gray-600">
+                          {selectedSessionFilter !== 'all' || selectedDateFilter !== 'all'
+                            ? 'Không có điểm danh nào phù hợp với bộ lọc đã chọn'
+                            : 'Chưa có điểm danh nào'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {filteredRecords.map(record => (
+                        <div
+                          key={record.record_id}
+                          className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-3">
+                                <h4 className="font-semibold text-gray-800 text-lg">
+                                  {record.student.full_name}
+                                </h4>
+                                <span className="text-sm text-gray-500">
+                                  ({record.student.student_code})
+                                </span>
+                                <span
+                                  className={`px-3 py-1 rounded text-xs font-semibold ${
+                                    record.status === 'PRESENT'
+                                      ? 'bg-green-100 text-green-700'
+                                      : record.status === 'LATE'
+                                        ? 'bg-yellow-100 text-yellow-700'
+                                        : 'bg-red-100 text-red-700'
+                                  }`}
+                                >
+                                  {record.status === 'PRESENT'
+                                    ? '✅ Đúng giờ'
+                                    : record.status === 'LATE'
+                                      ? '⏰ Muộn'
+                                      : '❌ Vắng'}
+                                </span>
+                                {/* Hiển thị trạng thái vị trí nếu lớp có vị trí */}
                                 {attendanceData?.class.latitude &&
                                   attendanceData?.class.longitude && (
-                                    <div className="space-y-1">
-                                      {record.distance_from_class !== null ? (
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-gray-600 text-sm">
-                                            📏 Khoảng cách từ lớp:{' '}
-                                            <span className="font-semibold">
-                                              {record.distance_from_class}m
-                                            </span>
-                                          </span>
-                                          {attendanceData?.class.location_radius && (
-                                            <span className="text-gray-400 text-xs">
-                                              (Bán kính cho phép:{' '}
-                                              {attendanceData.class.location_radius}m)
-                                            </span>
+                                    <span
+                                      className={`px-3 py-1 rounded text-xs font-semibold ${
+                                        record.location_valid === true
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : record.location_valid === false
+                                            ? 'bg-red-100 text-red-700'
+                                            : 'bg-gray-100 text-gray-700'
+                                      }`}
+                                    >
+                                      {record.location_valid === true
+                                        ? '✅ Vị trí hợp lệ'
+                                        : record.location_valid === false
+                                          ? '❌ Vị trí không hợp lệ'
+                                          : '⚠️ Không có GPS'}
+                                    </span>
+                                  )}
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
+                                <div>
+                                  <span className="font-medium">Buổi học:</span>{' '}
+                                  {record.session?.date
+                                    ? new Date(record.session.date).toLocaleDateString('vi-VN')
+                                    : 'N/A'}{' '}
+                                  {record.session?.start_time || ''}
+                                  {record.session?.end_time ? ` - ${record.session.end_time}` : ''}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Phòng:</span>{' '}
+                                  {record.session?.room || 'N/A'}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Thời gian điểm danh:</span>{' '}
+                                  {record.checkin_time
+                                    ? new Date(record.checkin_time).toLocaleString('vi-VN')
+                                    : 'N/A'}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Nguồn:</span>{' '}
+                                  {record.source || 'N/A'}
+                                </div>
+                                {record.session?.topic && (
+                                  <div className="md:col-span-2">
+                                    <span className="font-medium">Chủ đề:</span>{' '}
+                                    {record.session.topic}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Hiển thị thông tin vị trí */}
+                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                <p className="font-medium text-gray-700 mb-2">
+                                  📍 Thông tin vị trí:
+                                </p>
+                                {record.latitude && record.longitude ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <a
+                                        href={`https://www.google.com/maps?q=${record.latitude},${record.longitude}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800 underline text-sm font-medium"
+                                      >
+                                        🗺️ Xem trên Google Maps
+                                      </a>
+                                      <span className="text-gray-500 text-xs">
+                                        ({parseFloat(record.latitude).toFixed(6)},{' '}
+                                        {parseFloat(record.longitude).toFixed(6)})
+                                      </span>
+                                    </div>
+                                    {record.attendanceSession?.teacher_latitude &&
+                                      record.attendanceSession?.teacher_longitude && (
+                                        <div className="space-y-1">
+                                          {record.distance_from_teacher !== null ? (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-gray-600 text-sm">
+                                                📏 Khoảng cách từ giáo viên:{' '}
+                                                <span className="font-semibold">
+                                                  {record.distance_from_teacher}m
+                                                </span>
+                                              </span>
+                                              {record.attendanceSession?.location_radius && (
+                                                <span className="text-gray-400 text-xs">
+                                                  (Bán kính cho phép:{' '}
+                                                  {record.attendanceSession.location_radius}m)
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : null}
+                                          {record.location_valid !== null && (
+                                            <div
+                                              className={`text-sm font-medium ${
+                                                record.location_valid
+                                                  ? 'text-green-600'
+                                                  : 'text-red-600'
+                                              }`}
+                                            >
+                                              {record.location_valid
+                                                ? '✅ Điểm danh trong phạm vi cho phép'
+                                                : '❌ Điểm danh ngoài phạm vi cho phép'}
+                                            </div>
                                           )}
                                         </div>
-                                      ) : null}
-                                      {record.location_valid !== null && (
-                                        <div
-                                          className={`text-sm font-medium ${
-                                            record.location_valid
-                                              ? 'text-green-600'
-                                              : 'text-red-600'
-                                          }`}
-                                        >
-                                          {record.location_valid
-                                            ? '✅ Điểm danh trong phạm vi cho phép'
-                                            : '❌ Điểm danh ngoài phạm vi cho phép'}
-                                        </div>
                                       )}
+                                  </div>
+                                ) : record.no_gps_reason ? (
+                                  <div className="space-y-2">
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                                      <p className="font-medium text-yellow-800 mb-1">
+                                        ⚠️ Lý do không có GPS:
+                                      </p>
+                                      <p className="text-sm text-yellow-700">
+                                        {record.no_gps_reason}
+                                      </p>
                                     </div>
-                                  )}
-                              </div>
-                            ) : record.no_gps_reason ? (
-                              <div className="space-y-2">
-                                <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                                  <p className="font-medium text-yellow-800 mb-1">
-                                    ⚠️ Lý do không có GPS:
-                                  </p>
-                                  <p className="text-sm text-yellow-700">{record.no_gps_reason}</p>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                <p className="text-red-500 text-sm font-medium">
-                                  ⚠️ Học sinh không cung cấp vị trí GPS khi điểm danh
-                                </p>
-                                {attendanceData?.class.latitude &&
-                                  attendanceData?.class.longitude && (
-                                    <p className="text-gray-500 text-xs">
-                                      Lớp học có yêu cầu vị trí GPS. Điểm danh này không thể xác
-                                      minh vị trí.
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <p className="text-red-500 text-sm font-medium">
+                                      ⚠️ Học sinh không cung cấp vị trí GPS khi điểm danh
                                     </p>
-                                  )}
-                              </div>
-                            )}
+                                    {attendanceData?.class.latitude &&
+                                      attendanceData?.class.longitude && (
+                                        <p className="text-gray-500 text-xs">
+                                          Lớp học có yêu cầu vị trí GPS. Điểm danh này không thể xác
+                                          minh vị trí.
+                                        </p>
+                                      )}
+                                  </div>
+                                )}
 
-                            {/* Validation Status and Actions */}
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-gray-700">
-                                    Trạng thái đánh giá:
-                                  </span>
-                                  {(() => {
-                                    // Convert to number for comparison (handle boolean, string, or number)
-                                    const isValid = record.is_valid;
-                                    const isValidNum =
-                                      isValid === null || isValid === undefined
-                                        ? null
-                                        : Number(isValid);
+                                {/* Validation Status and Actions */}
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-gray-700">
+                                        Trạng thái đánh giá:
+                                      </span>
+                                      {(() => {
+                                        // Convert to number for comparison (handle boolean, string, or number)
+                                        const isValid = record.is_valid;
+                                        const isValidNum =
+                                          isValid === null || isValid === undefined
+                                            ? null
+                                            : Number(isValid);
 
-                                    if (isValidNum === null) {
-                                      return (
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">
-                                          ⏳ Chờ đánh giá
-                                        </span>
-                                      );
-                                    } else if (isValidNum === 1) {
-                                      return (
-                                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">
-                                          ✅ Hợp lệ
-                                        </span>
-                                      );
-                                    } else {
-                                      return (
-                                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">
-                                          ❌ Không hợp lệ
-                                        </span>
-                                      );
-                                    }
-                                  })()}
-                                </div>
-
-                                {/* Validation Actions */}
-                                <div className="flex gap-2">
-                                  {record.is_valid === null && (
-                                    <>
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            const response = await api.put(
-                                              `/attendance/${record.record_id}`,
-                                              {
-                                                is_valid: 1,
-                                              }
-                                            );
-                                            if (response.data.success) {
-                                              alert('Đã đánh giá điểm danh là hợp lệ');
-                                              fetchAllAttendanceRecords();
-                                            }
-                                          } catch (error) {
-                                            alert(
-                                              error.response?.data?.message || 'Cập nhật thất bại'
-                                            );
-                                          }
-                                        }}
-                                        className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
-                                        title="Đánh giá hợp lệ"
-                                      >
-                                        ✅ Hợp lệ
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            const response = await api.put(
-                                              `/attendance/${record.record_id}`,
-                                              {
-                                                is_valid: 0,
-                                              }
-                                            );
-                                            if (response.data.success) {
-                                              alert('Đã đánh giá điểm danh là không hợp lệ');
-                                              fetchAllAttendanceRecords();
-                                            }
-                                          } catch (error) {
-                                            alert(
-                                              error.response?.data?.message || 'Cập nhật thất bại'
-                                            );
-                                          }
-                                        }}
-                                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
-                                        title="Đánh giá không hợp lệ"
-                                      >
-                                        ❌ Không hợp lệ
-                                      </button>
-                                    </>
-                                  )}
-                                  {(record.is_valid === 1 || record.is_valid === 0) && (
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const response = await api.put(
-                                            `/attendance/${record.record_id}`,
-                                            {
-                                              is_valid: record.is_valid === 1 ? 0 : 1,
-                                            }
+                                        if (isValidNum === null) {
+                                          return (
+                                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold">
+                                              ⏳ Chờ đánh giá
+                                            </span>
                                           );
-                                          if (response.data.success) {
-                                            alert(
-                                              `Đã đổi đánh giá thành ${record.is_valid === 1 ? 'không hợp lệ' : 'hợp lệ'}`
-                                            );
-                                            fetchAllAttendanceRecords();
-                                          }
-                                        } catch (error) {
-                                          alert(
-                                            error.response?.data?.message || 'Cập nhật thất bại'
+                                        } else if (isValidNum === 1) {
+                                          return (
+                                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                                              ✅ Hợp lệ
+                                            </span>
+                                          );
+                                        } else {
+                                          return (
+                                            <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold">
+                                              ❌ Không hợp lệ
+                                            </span>
                                           );
                                         }
-                                      }}
-                                      className={`px-3 py-1 rounded text-sm transition ${
-                                        record.is_valid === 1
-                                          ? 'bg-red-600 text-white hover:bg-red-700'
-                                          : 'bg-green-600 text-white hover:bg-green-700'
-                                      }`}
-                                      title={
-                                        record.is_valid === 1
-                                          ? 'Đổi thành không hợp lệ'
-                                          : 'Đổi thành hợp lệ'
-                                      }
-                                    >
-                                      {record.is_valid === 1 ? '❌ Đổi' : '✅ Đổi'}
-                                    </button>
-                                  )}
+                                      })()}
+                                    </div>
+
+                                    {/* Validation Actions */}
+                                    <div className="flex gap-2">
+                                      {record.is_valid === null && (
+                                        <>
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                const response = await api.put(
+                                                  `/attendance/${record.record_id}`,
+                                                  {
+                                                    is_valid: 1,
+                                                  }
+                                                );
+                                                if (response.data.success) {
+                                                  alert('Đã đánh giá điểm danh là hợp lệ');
+                                                  fetchAllAttendanceRecords();
+                                                }
+                                              } catch (error) {
+                                                alert(
+                                                  error.response?.data?.message ||
+                                                    'Cập nhật thất bại'
+                                                );
+                                              }
+                                            }}
+                                            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
+                                            title="Đánh giá hợp lệ"
+                                          >
+                                            ✅ Hợp lệ
+                                          </button>
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                const response = await api.put(
+                                                  `/attendance/${record.record_id}`,
+                                                  {
+                                                    is_valid: 0,
+                                                  }
+                                                );
+                                                if (response.data.success) {
+                                                  alert('Đã đánh giá điểm danh là không hợp lệ');
+                                                  fetchAllAttendanceRecords();
+                                                }
+                                              } catch (error) {
+                                                alert(
+                                                  error.response?.data?.message ||
+                                                    'Cập nhật thất bại'
+                                                );
+                                              }
+                                            }}
+                                            className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
+                                            title="Đánh giá không hợp lệ"
+                                          >
+                                            ❌ Không hợp lệ
+                                          </button>
+                                        </>
+                                      )}
+                                      {(record.is_valid === 1 || record.is_valid === 0) && (
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              const response = await api.put(
+                                                `/attendance/${record.record_id}`,
+                                                {
+                                                  is_valid: record.is_valid === 1 ? 0 : 1,
+                                                }
+                                              );
+                                              if (response.data.success) {
+                                                alert(
+                                                  `Đã đổi đánh giá thành ${record.is_valid === 1 ? 'không hợp lệ' : 'hợp lệ'}`
+                                                );
+                                                fetchAllAttendanceRecords();
+                                              }
+                                            } catch (error) {
+                                              alert(
+                                                error.response?.data?.message || 'Cập nhật thất bại'
+                                              );
+                                            }
+                                          }}
+                                          className={`px-3 py-1 rounded text-sm transition ${
+                                            record.is_valid === 1
+                                              ? 'bg-red-600 text-white hover:bg-red-700'
+                                              : 'bg-green-600 text-white hover:bg-green-700'
+                                          }`}
+                                          title={
+                                            record.is_valid === 1
+                                              ? 'Đổi thành không hợp lệ'
+                                              : 'Đổi thành hợp lệ'
+                                          }
+                                        >
+                                          {record.is_valid === 1 ? '❌ Đổi' : '✅ Đổi'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()
               )}
             </div>
           )}
@@ -2660,14 +2898,19 @@ function ClassDetail() {
                     <select
                       id="qrLocationRadiusSelect"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      defaultValue="10"
+                      defaultValue="15"
                     >
-                      <option value="5">5 mét</option>
-                      <option value="6">6 mét</option>
-                      <option value="7">7 mét</option>
-                      <option value="8">8 mét</option>
-                      <option value="9">9 mét</option>
                       <option value="10">10 mét</option>
+                      <option value="11">11 mét</option>
+                      <option value="12">12 mét</option>
+                      <option value="13">13 mét</option>
+                      <option value="14">14 mét</option>
+                      <option value="15">15 mét</option>
+                      <option value="16">16 mét</option>
+                      <option value="17">17 mét</option>
+                      <option value="18">18 mét</option>
+                      <option value="19">19 mét</option>
+                      <option value="20">20 mét</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-2">
                       Học sinh phải ở trong bán kính này so với vị trí của bạn (giáo viên) để điểm
@@ -2830,7 +3073,7 @@ function ClassDetail() {
                                   token: selectedSessionDetail.qrToken,
                                   url: qrURL,
                                   expiresAt: selectedSessionDetail.qrExpiresAt,
-                                  locationRadius: selectedSessionDetail.locationRadius || 10,
+                                  locationRadius: selectedSessionDetail.locationRadius || 15,
                                   teacherLatitude: selectedSessionDetail.teacherLatitude,
                                   teacherLongitude: selectedSessionDetail.teacherLongitude,
                                   sessionInfo: {
@@ -3172,7 +3415,7 @@ function ClassDetail() {
                           </p>
                           <p>
                             <span className="font-medium">Bán kính cho phép:</span>{' '}
-                            {qrData.locationRadius || 10}m
+                            {qrData.locationRadius || 15}m
                           </p>
                         </div>
                       </div>

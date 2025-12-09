@@ -427,7 +427,7 @@ const startAttendance = async (req, res) => {
       late_after_minutes = 15,
       latitude,
       longitude,
-      location_radius = 10,
+      location_radius = 15,
     } = req.body;
 
     const { AttendanceSession, QRToken } = require('../models');
@@ -490,7 +490,7 @@ const startAttendance = async (req, res) => {
         late_after_minutes,
         teacher_latitude: latitude ? parseFloat(latitude) : null,
         teacher_longitude: longitude ? parseFloat(longitude) : null,
-        location_radius: location_radius ? parseInt(location_radius) : 10,
+        location_radius: location_radius ? parseInt(location_radius) : 15,
       });
       attendanceSession = existingAttendance;
     } else {
@@ -506,7 +506,7 @@ const startAttendance = async (req, res) => {
         late_after_minutes,
         teacher_latitude: latitude ? parseFloat(latitude) : null,
         teacher_longitude: longitude ? parseFloat(longitude) : null,
-        location_radius: location_radius ? parseInt(location_radius) : 10,
+        location_radius: location_radius ? parseInt(location_radius) : 15,
       });
     }
 

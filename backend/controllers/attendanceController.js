@@ -72,7 +72,7 @@ const scanQR = async (req, res) => {
       // Check if teacher location is set
       if (attendanceSession.teacher_latitude && attendanceSession.teacher_longitude) {
         // Check distance from teacher's location
-        const radius = attendanceSession.location_radius || 10;
+        const radius = attendanceSession.location_radius || 15;
         withinRadius = isWithinRadius(
           parseFloat(attendanceSession.teacher_latitude),
           parseFloat(attendanceSession.teacher_longitude),

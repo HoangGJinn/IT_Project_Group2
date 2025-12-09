@@ -25,12 +25,14 @@ function GeneralReport() {
   const [loading, setLoading] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [courses, setCourses] = useState([]);
+  const [courseList, setCourseList] = useState([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
 
   const academicYears = generateAcademicYears();
   const semesters = getSemesters();
 
   useEffect(() => {
-    fetchCourses();
+    fetchCourseList();
   }, []);
 
   useEffect(() => {
@@ -39,15 +41,59 @@ function GeneralReport() {
     }
   }, [selectedYear, selectedSemester, selectedSubject]);
 
-  const fetchCourses = async () => {
+  const fetchCourseList = async () => {
     try {
-      const response = await api.get('/courses');
+      setLoadingCourses(true);
+      // Fetch classes to get courses with school_year and semester
+      const response = await api.get('/classes');
       if (response.data.success) {
-        setCourses(response.data.data || []);
+        const classes = response.data.data || [];
+
+        // Group classes by course_id, school_year, and semester
+        const courseMap = new Map();
+
+        classes.forEach(cls => {
+          if (cls.course && cls.course.course_id) {
+            const key = `${cls.course.course_id}_${cls.school_year}_${cls.semester}`;
+            if (!courseMap.has(key)) {
+              courseMap.set(key, {
+                course_id: cls.course.course_id,
+                course_name: cls.course.name,
+                course_code: cls.course.code,
+                school_year: cls.school_year,
+                semester: cls.semester,
+                class_count: 0,
+              });
+            }
+            courseMap.get(key).class_count++;
+          }
+        });
+
+        // Convert to array and sort
+        const courseListArray = Array.from(courseMap.values()).sort((a, b) => {
+          // Sort by school_year (newest first), then by semester, then by course name
+          if (a.school_year !== b.school_year) {
+            return b.school_year.localeCompare(a.school_year);
+          }
+          if (a.semester !== b.semester) {
+            return a.semester.localeCompare(b.semester);
+          }
+          return a.course_name.localeCompare(b.course_name);
+        });
+
+        setCourseList(courseListArray);
       }
     } catch (error) {
-      console.error('Fetch courses error:', error);
+      console.error('Fetch course list error:', error);
+    } finally {
+      setLoadingCourses(false);
     }
+  };
+
+  const handleCourseClick = course => {
+    setSelectedYear(course.school_year);
+    setSelectedSemester(course.semester === 'HK1' ? '1' : course.semester === 'HK2' ? '2' : '3');
+    setSelectedSubject(course.course_id.toString());
   };
 
   const fetchReport = async () => {
@@ -170,47 +216,84 @@ function GeneralReport() {
 
   return (
     <div>
-      {/* Filter Section */}
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <select
-          value={selectedYear}
-          onChange={e => setSelectedYear(e.target.value)}
-          className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
-        >
-          <option value="">Năm Học</option>
-          {academicYears.map(year => (
-            <option key={year.value} value={year.value}>
-              {year.label}
-            </option>
-          ))}
-        </select>
+      {/* Course List Section */}
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Danh Sách Môn Học</h2>
+        {loadingCourses ? (
+          <div className="text-center py-8">
+            <p className="text-gray-600">Đang tải danh sách môn học...</p>
+          </div>
+        ) : courseList.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-lg">
+            <p className="text-gray-600">Chưa có môn học nào</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {courseList.map((course, index) => {
+              const isSelected =
+                selectedYear === course.school_year &&
+                selectedSemester ===
+                  (course.semester === 'HK1' ? '1' : course.semester === 'HK2' ? '2' : '3') &&
+                selectedSubject === course.course_id.toString();
 
-        <select
-          value={selectedSemester}
-          onChange={e => setSelectedSemester(e.target.value)}
-          className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
-        >
-          <option value="">Học Kì</option>
-          {semesters.map(semester => (
-            <option key={semester.value} value={semester.displayValue}>
-              {semester.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={selectedSubject}
-          onChange={e => setSelectedSubject(e.target.value)}
-          className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
-        >
-          <option value="">Môn Học (Tất cả)</option>
-          {courses.map(course => (
-            <option key={course.course_id} value={course.course_id}>
-              {course.name}
-            </option>
-          ))}
-        </select>
+              return (
+                <div
+                  key={`${course.course_id}_${course.school_year}_${course.semester}`}
+                  onClick={() => handleCourseClick(course)}
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover:shadow-lg ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50 shadow-md'
+                      : 'border-gray-200 bg-white hover:border-blue-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-gray-800 flex-1">
+                      {course.course_name}
+                    </h3>
+                    {isSelected && <span className="ml-2 text-blue-600 text-xl">✓</span>}
+                  </div>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <p>
+                      <span className="font-medium">Mã môn:</span> {course.course_code || 'N/A'}
+                    </p>
+                    <p>
+                      <span className="font-medium">Năm học:</span> {course.school_year}
+                    </p>
+                    <p>
+                      <span className="font-medium">Học kì:</span> {course.semester}
+                    </p>
+                    <p>
+                      <span className="font-medium">Số lớp:</span> {course.class_count}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Selected Course Info */}
+      {selectedYear && selectedSemester && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-sm text-gray-700">
+            <span className="font-semibold">Đang xem báo cáo:</span>{' '}
+            {courseList.find(
+              c =>
+                c.course_id.toString() === selectedSubject &&
+                c.school_year === selectedYear &&
+                c.semester ===
+                  (selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : 'HK3')
+            )?.course_name || 'Tất cả môn học'}{' '}
+            - {selectedYear} -{' '}
+            {selectedSemester === '1'
+              ? 'Học kì 1'
+              : selectedSemester === '2'
+                ? 'Học kì 2'
+                : 'Học kì 3'}
+          </p>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
