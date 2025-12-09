@@ -268,10 +268,17 @@ function GeneralReport() {
                       y="105"
                       textAnchor="middle"
                       className="text-4xl font-bold fill-gray-800"
+                      transform="rotate(90 100 100)"
                     >
                       {attendanceData.onTime + attendanceData.late}%
                     </text>
-                    <text x="100" y="125" textAnchor="middle" className="text-sm fill-gray-600">
+                    <text
+                      x="100"
+                      y="125"
+                      textAnchor="middle"
+                      className="text-sm fill-gray-600"
+                      transform="rotate(90 100 100)"
+                    >
                       Có mặt
                     </text>
                   </svg>

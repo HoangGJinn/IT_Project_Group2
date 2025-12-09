@@ -81,6 +81,17 @@ function ClassDetail() {
     sessionInfo: null,
   });
 
+  // Force re-render every minute to update session status in real-time
+  const [, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     fetchClassDetail();
   }, [id]);
@@ -879,8 +890,53 @@ function ClassDetail() {
               {/* Upcoming Sessions - Smart Layout */}
               <div>
                 {(() => {
+                  const now = new Date();
                   const today = new Date().toISOString().split('T')[0];
-                  const upcomingSessions = sessions
+
+                  // Calculate real-time status for each session (client-side)
+                  const calculateSessionStatus = session => {
+                    const sessionDate = new Date(session.date);
+                    const [startHour, startMinute] = (session.start_time || '00:00')
+                      .split(':')
+                      .map(Number);
+                    const sessionStartTime = new Date(sessionDate);
+                    sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                    let sessionEndTime = null;
+                    if (session.end_time) {
+                      const [endHour, endMinute] = session.end_time.split(':').map(Number);
+                      sessionEndTime = new Date(sessionDate);
+                      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                    } else {
+                      sessionEndTime = new Date(sessionStartTime);
+                      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                    }
+
+                    let realTimeStatus = session.status;
+                    if (session.status !== 'CANCELLED') {
+                      if (now < sessionStartTime) {
+                        realTimeStatus = 'UPCOMING';
+                      } else if (
+                        now >= sessionStartTime &&
+                        (!sessionEndTime || now < sessionEndTime)
+                      ) {
+                        realTimeStatus = 'ONGOING';
+                      } else if (sessionEndTime && now >= sessionEndTime) {
+                        realTimeStatus = 'FINISHED';
+                      }
+                    }
+
+                    return {
+                      ...session,
+                      realTimeStatus,
+                      sessionStartTime,
+                      sessionEndTime,
+                    };
+                  };
+
+                  const sessionsWithStatus = sessions.map(calculateSessionStatus);
+
+                  const upcomingSessions = sessionsWithStatus
                     .filter(s => {
                       if (s.status === 'CANCELLED') return false;
                       const sessionStatus = s.realTimeStatus || s.status;
@@ -1119,7 +1175,52 @@ function ClassDetail() {
               {/* Finished Sessions - Smart Layout */}
               <div>
                 {(() => {
-                  const finishedSessions = sessions
+                  const now = new Date();
+
+                  // Calculate real-time status for each session (client-side)
+                  const calculateSessionStatus = session => {
+                    const sessionDate = new Date(session.date);
+                    const [startHour, startMinute] = (session.start_time || '00:00')
+                      .split(':')
+                      .map(Number);
+                    const sessionStartTime = new Date(sessionDate);
+                    sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                    let sessionEndTime = null;
+                    if (session.end_time) {
+                      const [endHour, endMinute] = session.end_time.split(':').map(Number);
+                      sessionEndTime = new Date(sessionDate);
+                      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                    } else {
+                      sessionEndTime = new Date(sessionStartTime);
+                      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                    }
+
+                    let realTimeStatus = session.status;
+                    if (session.status !== 'CANCELLED') {
+                      if (now < sessionStartTime) {
+                        realTimeStatus = 'UPCOMING';
+                      } else if (
+                        now >= sessionStartTime &&
+                        (!sessionEndTime || now < sessionEndTime)
+                      ) {
+                        realTimeStatus = 'ONGOING';
+                      } else if (sessionEndTime && now >= sessionEndTime) {
+                        realTimeStatus = 'FINISHED';
+                      }
+                    }
+
+                    return {
+                      ...session,
+                      realTimeStatus,
+                      sessionStartTime,
+                      sessionEndTime,
+                    };
+                  };
+
+                  const sessionsWithStatus = sessions.map(calculateSessionStatus);
+
+                  const finishedSessions = sessionsWithStatus
                     .filter(s => {
                       const sessionStatus = s.realTimeStatus || s.status;
                       return sessionStatus === 'FINISHED' || s.status === 'FINISHED';
@@ -1798,24 +1899,24 @@ function ClassDetail() {
                                 strokeDasharray={`${(classReport.overview.absent / 100) * 502.4} 502.4`}
                                 strokeDashoffset={`-${((classReport.overview.on_time + classReport.overview.late) / 100) * 502.4}`}
                               />
-                              <g transform="rotate(90 100 100)">
-                                <text
-                                  x="100"
-                                  y="105"
-                                  textAnchor="middle"
-                                  className="text-3xl font-bold fill-gray-800"
-                                >
-                                  {classReport.overview.on_time + classReport.overview.late}%
-                                </text>
-                                <text
-                                  x="100"
-                                  y="125"
-                                  textAnchor="middle"
-                                  className="text-sm fill-gray-600"
-                                >
-                                  Có mặt
-                                </text>
-                              </g>
+                              <text
+                                x="100"
+                                y="105"
+                                textAnchor="middle"
+                                className="text-3xl font-bold fill-gray-800"
+                                transform="rotate(90 100 100)"
+                              >
+                                {classReport.overview.on_time + classReport.overview.late}%
+                              </text>
+                              <text
+                                x="100"
+                                y="125"
+                                textAnchor="middle"
+                                className="text-sm fill-gray-600"
+                                transform="rotate(90 100 100)"
+                              >
+                                Có mặt
+                              </text>
                             </svg>
                           </div>
                         </div>
@@ -2601,179 +2702,210 @@ function ClassDetail() {
           )}
 
           {/* Session Detail Modal */}
-          {showSessionDetailModal && selectedSessionDetail && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-800">Chi Tiết Buổi Học</h3>
-                  <button
-                    onClick={() => {
-                      setShowSessionDetailModal(false);
-                      setSelectedSessionDetail(null);
-                    }}
-                    className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
-                  >
-                    ×
-                  </button>
-                </div>
+          {showSessionDetailModal &&
+            selectedSessionDetail &&
+            (() => {
+              // Calculate real-time status for the selected session (client-side)
+              const now = new Date();
+              const sessionDate = new Date(selectedSessionDetail.date);
+              const [startHour, startMinute] = (selectedSessionDetail.start_time || '00:00')
+                .split(':')
+                .map(Number);
+              const sessionStartTime = new Date(sessionDate);
+              sessionStartTime.setHours(startHour, startMinute, 0, 0);
 
-                {/* Session Info */}
-                <div className="space-y-4 mb-6">
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border-l-4 border-blue-500">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">📅 Ngày học</p>
-                        <p className="font-semibold text-gray-800">
-                          {new Date(selectedSessionDetail.date).toLocaleDateString('vi-VN', {
-                            weekday: 'long',
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">🕐 Thời gian</p>
-                        <p className="font-semibold text-gray-800">
-                          {selectedSessionDetail.start_time}
-                          {selectedSessionDetail.end_time
-                            ? ` - ${selectedSessionDetail.end_time}`
-                            : ''}
-                        </p>
-                      </div>
-                      {selectedSessionDetail.room && (
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">📍 Phòng học</p>
-                          <p className="font-semibold text-gray-800">
-                            {selectedSessionDetail.room}
-                          </p>
+              let sessionEndTime = null;
+              if (selectedSessionDetail.end_time) {
+                const [endHour, endMinute] = selectedSessionDetail.end_time.split(':').map(Number);
+                sessionEndTime = new Date(sessionDate);
+                sessionEndTime.setHours(endHour, endMinute, 0, 0);
+              } else {
+                sessionEndTime = new Date(sessionStartTime);
+                sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+              }
+
+              let realTimeStatus = selectedSessionDetail.status;
+              if (selectedSessionDetail.status !== 'CANCELLED') {
+                if (now < sessionStartTime) {
+                  realTimeStatus = 'UPCOMING';
+                } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+                  realTimeStatus = 'ONGOING';
+                } else if (sessionEndTime && now >= sessionEndTime) {
+                  realTimeStatus = 'FINISHED';
+                }
+              }
+
+              return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-bold text-gray-800">Chi Tiết Buổi Học</h3>
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailModal(false);
+                          setSelectedSessionDetail(null);
+                        }}
+                        className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Session Info */}
+                    <div className="space-y-4 mb-6">
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border-l-4 border-blue-500">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">📅 Ngày học</p>
+                            <p className="font-semibold text-gray-800">
+                              {new Date(selectedSessionDetail.date).toLocaleDateString('vi-VN', {
+                                weekday: 'long',
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                              })}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">🕐 Thời gian</p>
+                            <p className="font-semibold text-gray-800">
+                              {selectedSessionDetail.start_time}
+                              {selectedSessionDetail.end_time
+                                ? ` - ${selectedSessionDetail.end_time}`
+                                : ''}
+                            </p>
+                          </div>
+                          {selectedSessionDetail.room && (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">📍 Phòng học</p>
+                              <p className="font-semibold text-gray-800">
+                                {selectedSessionDetail.room}
+                              </p>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">📊 Trạng thái</p>
+                            <p
+                              className={`font-semibold ${
+                                realTimeStatus === 'FINISHED'
+                                  ? 'text-green-600'
+                                  : realTimeStatus === 'ONGOING'
+                                    ? 'text-blue-600'
+                                    : 'text-gray-600'
+                              }`}
+                            >
+                              {realTimeStatus === 'FINISHED'
+                                ? 'Đã kết thúc'
+                                : realTimeStatus === 'ONGOING'
+                                  ? 'Đang diễn ra'
+                                  : 'Sắp tới'}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">📊 Trạng thái</p>
-                        <p
-                          className={`font-semibold ${
-                            (selectedSessionDetail.realTimeStatus ||
-                              selectedSessionDetail.status) === 'FINISHED'
-                              ? 'text-green-600'
-                              : (selectedSessionDetail.realTimeStatus ||
-                                    selectedSessionDetail.status) === 'ONGOING'
-                                ? 'text-blue-600'
-                                : 'text-gray-600'
-                          }`}
-                        >
-                          {(selectedSessionDetail.realTimeStatus ||
-                            selectedSessionDetail.status) === 'FINISHED'
-                            ? 'Đã kết thúc'
-                            : (selectedSessionDetail.realTimeStatus ||
-                                  selectedSessionDetail.status) === 'ONGOING'
-                              ? 'Đang diễn ra'
-                              : 'Sắp tới'}
-                        </p>
+                        {selectedSessionDetail.topic && (
+                          <div className="mt-4">
+                            <p className="text-sm text-gray-600 mb-1">📝 Chủ đề</p>
+                            <p className="font-semibold text-gray-800">
+                              {selectedSessionDetail.topic}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {selectedSessionDetail.topic && (
-                      <div className="mt-4">
-                        <p className="text-sm text-gray-600 mb-1">📝 Chủ đề</p>
-                        <p className="font-semibold text-gray-800">{selectedSessionDetail.topic}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="space-y-3">
-                  {(selectedSessionDetail.realTimeStatus || selectedSessionDetail.status) ===
-                  'ONGOING' ? (
-                    <>
-                      {selectedSessionDetail.hasQR && !selectedSessionDetail.qrExpired ? (
+                    {/* Action Buttons */}
+                    <div className="space-y-3">
+                      {realTimeStatus === 'ONGOING' ? (
+                        <>
+                          {selectedSessionDetail.hasQR && !selectedSessionDetail.qrExpired ? (
+                            <button
+                              onClick={() => {
+                                const protocol = window.location.protocol;
+                                const hostname = window.location.hostname;
+                                const port =
+                                  window.location.port || (protocol === 'https:' ? '443' : '80');
+                                const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${selectedSessionDetail.qrToken}`;
+
+                                setQrData({
+                                  token: selectedSessionDetail.qrToken,
+                                  url: qrURL,
+                                  expiresAt: selectedSessionDetail.qrExpiresAt,
+                                  locationRadius: selectedSessionDetail.locationRadius || 10,
+                                  teacherLatitude: selectedSessionDetail.teacherLatitude,
+                                  teacherLongitude: selectedSessionDetail.teacherLongitude,
+                                  sessionInfo: {
+                                    date: selectedSessionDetail.date,
+                                    time: `${selectedSessionDetail.start_time}${selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}`,
+                                    room: selectedSessionDetail.room || 'Chưa có',
+                                    topic: selectedSessionDetail.topic || 'Chưa có',
+                                  },
+                                });
+                                setShowQRModal(true);
+                                setShowSessionDetailModal(false);
+                              }}
+                              className="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition"
+                            >
+                              ✅ Xem QR Đã Tạo
+                            </button>
+                          ) : selectedSessionDetail.canStartAttendance ? (
+                            <button
+                              onClick={() => {
+                                handleOpenQRModal(selectedSessionDetail);
+                                setShowSessionDetailModal(false);
+                              }}
+                              className="w-full px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition"
+                            >
+                              📱 Tạo QR Điểm Danh
+                            </button>
+                          ) : null}
+                        </>
+                      ) : selectedSessionDetail.canStartSession ? (
                         <button
                           onClick={() => {
-                            const protocol = window.location.protocol;
-                            const hostname = window.location.hostname;
-                            const port =
-                              window.location.port || (protocol === 'https:' ? '443' : '80');
-                            const qrURL = `${protocol}//${hostname}${port && port !== '80' && port !== '443' ? `:${port}` : ''}/student/scan?token=${selectedSessionDetail.qrToken}`;
-
-                            setQrData({
-                              token: selectedSessionDetail.qrToken,
-                              url: qrURL,
-                              expiresAt: selectedSessionDetail.qrExpiresAt,
-                              locationRadius: selectedSessionDetail.locationRadius || 10,
-                              teacherLatitude: selectedSessionDetail.teacherLatitude,
-                              teacherLongitude: selectedSessionDetail.teacherLongitude,
-                              sessionInfo: {
-                                date: selectedSessionDetail.date,
-                                time: `${selectedSessionDetail.start_time}${selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}`,
-                                room: selectedSessionDetail.room || 'Chưa có',
-                                topic: selectedSessionDetail.topic || 'Chưa có',
-                              },
-                            });
-                            setShowQRModal(true);
+                            handleStartSession(selectedSessionDetail);
                             setShowSessionDetailModal(false);
                           }}
-                          className="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition"
+                          className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-700 transition"
                         >
-                          ✅ Xem QR Đã Tạo
-                        </button>
-                      ) : selectedSessionDetail.canStartAttendance ? (
-                        <button
-                          onClick={() => {
-                            handleOpenQRModal(selectedSessionDetail);
-                            setShowSessionDetailModal(false);
-                          }}
-                          className="w-full px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition"
-                        >
-                          📱 Tạo QR Điểm Danh
+                          ▶️ Bắt Đầu Lớp
                         </button>
                       ) : null}
-                    </>
-                  ) : selectedSessionDetail.canStartSession ? (
-                    <button
-                      onClick={() => {
-                        handleStartSession(selectedSessionDetail);
-                        setShowSessionDetailModal(false);
-                      }}
-                      className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-700 transition"
-                    >
-                      ▶️ Bắt Đầu Lớp
-                    </button>
-                  ) : null}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => {
-                        handleEditSession(selectedSessionDetail);
-                        setShowSessionDetailModal(false);
-                      }}
-                      className="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition"
-                    >
-                      ✏️ Đổi Lịch Học
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowDeleteSessionConfirm(true);
-                        setShowSessionDetailModal(false);
-                      }}
-                      className="px-4 py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition"
-                    >
-                      🗑️ Xóa Lịch Học
-                    </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => {
+                            handleEditSession(selectedSessionDetail);
+                            setShowSessionDetailModal(false);
+                          }}
+                          className="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition"
+                        >
+                          ✏️ Đổi Lịch Học
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowDeleteSessionConfirm(true);
+                            setShowSessionDetailModal(false);
+                          }}
+                          className="px-4 py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition"
+                        >
+                          🗑️ Xóa Lịch Học
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailModal(false);
+                          setSelectedSessionDetail(null);
+                        }}
+                        className="w-full px-4 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition"
+                      >
+                        Đóng
+                      </button>
+                    </div>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      setShowSessionDetailModal(false);
-                      setSelectedSessionDetail(null);
-                    }}
-                    className="w-full px-4 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition"
-                  >
-                    Đóng
-                  </button>
                 </div>
-              </div>
-            </div>
-          )}
+              );
+            })()}
 
           {/* Edit Session Modal */}
           {showEditSessionModal && selectedSessionDetail && (
