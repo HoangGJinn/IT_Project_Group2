@@ -58,18 +58,7 @@ const getSessions = async (req, res) => {
           sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
         }
 
-        // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
-        // Compare using timestamps to avoid timezone issues
-        if (
-          sessionData.status === 'ONGOING' &&
-          sessionEndTime &&
-          nowTimestamp >= sessionEndTime.getTime()
-        ) {
-          await session.update({ status: 'FINISHED' });
-          sessionData.status = 'FINISHED';
-        }
-
-        // Determine real-time status
+        // Determine real-time status first
         let realTimeStatus = sessionData.status;
         if (sessionData.status !== 'CANCELLED') {
           if (nowTimestamp < sessionStartTime.getTime()) {
@@ -84,15 +73,30 @@ const getSessions = async (req, res) => {
           }
         }
 
+        // Tự động cập nhật status trong database dựa trên realTimeStatus
+        if (sessionData.status !== 'CANCELLED') {
+          // Tự động chuyển sang ONGOING nếu đã đến giờ và status vẫn là UPCOMING
+          if (realTimeStatus === 'ONGOING' && sessionData.status !== 'ONGOING') {
+            await session.update({ status: 'ONGOING' });
+            sessionData.status = 'ONGOING';
+          }
+          // Tự động chuyển sang FINISHED nếu đã hết thời gian
+          if (realTimeStatus === 'FINISHED' && sessionData.status !== 'FINISHED') {
+            await session.update({ status: 'FINISHED' });
+            sessionData.status = 'FINISHED';
+          }
+        }
+
         sessionData.realTimeStatus = realTimeStatus;
-        // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING
+        // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING hoặc FINISHED
         sessionData.canStartSession =
-          nowTimestamp < sessionStartTime.getTime() &&
+          realTimeStatus === 'UPCOMING' &&
           sessionData.status !== 'ONGOING' &&
           sessionData.status !== 'FINISHED';
-        // Cho phép tạo QR chỉ khi lớp đã bắt đầu (status = ONGOING)
+        // Cho phép tạo QR khi đã đến giờ (realTimeStatus = ONGOING) và chưa hết giờ
+        // Không cần check status === 'ONGOING' vì có thể session chưa được start thủ công
         sessionData.canStartAttendance =
-          sessionData.status === 'ONGOING' &&
+          realTimeStatus === 'ONGOING' &&
           (!sessionEndTime || nowTimestamp < sessionEndTime.getTime());
 
         if (sessionData.attendanceSession) {
