@@ -27,7 +27,8 @@ const getSessions = async (req, res) => {
       order: [['date', 'DESC']],
     });
 
-    const now = new Date();
+    // Use current timestamp (UTC milliseconds) for consistent timezone handling
+    const nowTimestamp = Date.now();
 
     // Format sessions with attendance info and calculate real-time status
     const formattedSessions = await Promise.all(
@@ -58,7 +59,12 @@ const getSessions = async (req, res) => {
         }
 
         // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
-        if (sessionData.status === 'ONGOING' && sessionEndTime && now >= sessionEndTime) {
+        // Compare using timestamps to avoid timezone issues
+        if (
+          sessionData.status === 'ONGOING' &&
+          sessionEndTime &&
+          nowTimestamp >= sessionEndTime.getTime()
+        ) {
           await session.update({ status: 'FINISHED' });
           sessionData.status = 'FINISHED';
         }
@@ -66,11 +72,14 @@ const getSessions = async (req, res) => {
         // Determine real-time status
         let realTimeStatus = sessionData.status;
         if (sessionData.status !== 'CANCELLED') {
-          if (now < sessionStartTime) {
+          if (nowTimestamp < sessionStartTime.getTime()) {
             realTimeStatus = 'UPCOMING'; // Chưa đến giờ
-          } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+          } else if (
+            nowTimestamp >= sessionStartTime.getTime() &&
+            (!sessionEndTime || nowTimestamp < sessionEndTime.getTime())
+          ) {
             realTimeStatus = 'ONGOING'; // Đang diễn ra
-          } else if (sessionEndTime && now >= sessionEndTime) {
+          } else if (sessionEndTime && nowTimestamp >= sessionEndTime.getTime()) {
             realTimeStatus = 'FINISHED'; // Đã kết thúc
           }
         }
@@ -78,12 +87,13 @@ const getSessions = async (req, res) => {
         sessionData.realTimeStatus = realTimeStatus;
         // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING
         sessionData.canStartSession =
-          now < sessionStartTime &&
+          nowTimestamp < sessionStartTime.getTime() &&
           sessionData.status !== 'ONGOING' &&
           sessionData.status !== 'FINISHED';
         // Cho phép tạo QR chỉ khi lớp đã bắt đầu (status = ONGOING)
         sessionData.canStartAttendance =
-          sessionData.status === 'ONGOING' && (!sessionEndTime || now < sessionEndTime);
+          sessionData.status === 'ONGOING' &&
+          (!sessionEndTime || nowTimestamp < sessionEndTime.getTime());
 
         if (sessionData.attendanceSession) {
           sessionData.hasAttendance = true;
@@ -368,7 +378,7 @@ const startSession = async (req, res) => {
     }
 
     // Check if session can be started
-    const now = new Date();
+    const nowTimestamp = Date.now();
     // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
     // Use UTC to avoid timezone issues when deployed
     const dateStr = session.date; // Format: YYYY-MM-DD
@@ -387,7 +397,7 @@ const startSession = async (req, res) => {
     }
 
     // Chỉ cho phép bắt đầu nếu chưa đến giờ và chưa bắt đầu
-    if (now >= sessionStartTime) {
+    if (nowTimestamp >= sessionStartTime.getTime()) {
       return res.status(400).json({
         success: false,
         message: 'Buổi học đã đến giờ, không thể bắt đầu sớm',
@@ -456,7 +466,7 @@ const startAttendance = async (req, res) => {
     }
 
     // Check if session has ended
-    const now = new Date();
+    const nowTimestamp = Date.now();
     // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
     // Use UTC to avoid timezone issues when deployed
     const dateStr = session.date; // Format: YYYY-MM-DD
@@ -472,7 +482,7 @@ const startAttendance = async (req, res) => {
       sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
     }
 
-    if (sessionEndTime && now >= sessionEndTime) {
+    if (sessionEndTime && nowTimestamp >= sessionEndTime.getTime()) {
       // Tự động chuyển sang FINISHED
       await session.update({ status: 'FINISHED' });
       return res.status(400).json({
