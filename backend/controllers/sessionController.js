@@ -550,6 +550,10 @@ const startAttendance = async (req, res) => {
             }
           }
         }
+
+        if (!created) {
+          throw new Error('Không thể tạo QR token sau nhiều lần thử. Vui lòng thử lại.');
+        }
       }
     }
 
@@ -579,10 +583,61 @@ const startAttendance = async (req, res) => {
   }
 };
 
+const deleteSession = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const session = await Session.findByPk(id);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+      });
+    }
+
+    // Check if session has attendance records
+    const { AttendanceSession } = require('../models');
+    const attendanceSession = await AttendanceSession.findOne({
+      where: { session_id: id },
+    });
+
+    if (attendanceSession) {
+      // Check if there are any attendance records
+      const { AttendanceRecord } = require('../models');
+      const recordCount = await AttendanceRecord.count({
+        where: { attendance_session_id: attendanceSession.attendance_session_id },
+      });
+
+      if (recordCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Không thể xóa buổi học đã có điểm danh. Vui lòng xóa các bản ghi điểm danh trước.',
+        });
+      }
+    }
+
+    // Delete the session (cascade will handle related records)
+    await session.destroy();
+
+    res.json({
+      success: true,
+      message: 'Xóa buổi học thành công',
+    });
+  } catch (error) {
+    console.error('Delete session error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+};
+
 module.exports = {
   getSessions,
   createSession,
   updateSession,
   startSession,
   startAttendance,
+  deleteSession,
 };

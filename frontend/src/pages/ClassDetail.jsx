@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import LocationPicker from '../components/LocationPicker';
+import { QRCodeSVG } from 'qrcode.react';
 
 function ClassDetail() {
   const { id } = useParams();
