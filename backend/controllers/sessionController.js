@@ -27,8 +27,7 @@ const getSessions = async (req, res) => {
       order: [['date', 'DESC']],
     });
 
-    // Use current timestamp (UTC milliseconds) for consistent timezone handling
-    const nowTimestamp = Date.now();
+    const now = new Date();
 
     // Format sessions with attendance info and calculate real-time status
     const formattedSessions = await Promise.all(
@@ -36,68 +35,50 @@ const getSessions = async (req, res) => {
         const sessionData = session.toJSON();
 
         // Calculate real-time status based on current time
-        // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
-        // Use UTC to avoid timezone issues when deployed
-        const dateStr = sessionData.date; // Format: YYYY-MM-DD
+        const sessionDate = new Date(sessionData.date);
         const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
-
-        // Create UTC date for session start time
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const sessionStartTime = new Date(
-          Date.UTC(year, month - 1, day, startHour, startMinute, 0)
-        );
+        const sessionStartTime = new Date(sessionDate);
+        sessionStartTime.setHours(startHour, startMinute, 0, 0);
 
         // Calculate end time
         let sessionEndTime = null;
         if (sessionData.end_time) {
           const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
-          sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
+          sessionEndTime = new Date(sessionDate);
+          sessionEndTime.setHours(endHour, endMinute, 0, 0);
         } else {
           // Default to 90 minutes if no end_time
           sessionEndTime = new Date(sessionStartTime);
-          sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
+          sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
         }
 
-        // Determine real-time status first
+        // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
+        if (sessionData.status === 'ONGOING' && sessionEndTime && now >= sessionEndTime) {
+          await session.update({ status: 'FINISHED' });
+          sessionData.status = 'FINISHED';
+        }
+
+        // Determine real-time status
         let realTimeStatus = sessionData.status;
         if (sessionData.status !== 'CANCELLED') {
-          if (nowTimestamp < sessionStartTime.getTime()) {
+          if (now < sessionStartTime) {
             realTimeStatus = 'UPCOMING'; // Chưa đến giờ
-          } else if (
-            nowTimestamp >= sessionStartTime.getTime() &&
-            (!sessionEndTime || nowTimestamp < sessionEndTime.getTime())
-          ) {
+          } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
             realTimeStatus = 'ONGOING'; // Đang diễn ra
-          } else if (sessionEndTime && nowTimestamp >= sessionEndTime.getTime()) {
+          } else if (sessionEndTime && now >= sessionEndTime) {
             realTimeStatus = 'FINISHED'; // Đã kết thúc
           }
         }
 
-        // Tự động cập nhật status trong database dựa trên realTimeStatus
-        if (sessionData.status !== 'CANCELLED') {
-          // Tự động chuyển sang ONGOING nếu đã đến giờ và status vẫn là UPCOMING
-          if (realTimeStatus === 'ONGOING' && sessionData.status !== 'ONGOING') {
-            await session.update({ status: 'ONGOING' });
-            sessionData.status = 'ONGOING';
-          }
-          // Tự động chuyển sang FINISHED nếu đã hết thời gian
-          if (realTimeStatus === 'FINISHED' && sessionData.status !== 'FINISHED') {
-            await session.update({ status: 'FINISHED' });
-            sessionData.status = 'FINISHED';
-          }
-        }
-
         sessionData.realTimeStatus = realTimeStatus;
-        // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING hoặc FINISHED
+        // Cho phép bắt đầu lớp nếu chưa đến giờ và status chưa phải ONGOING
         sessionData.canStartSession =
-          realTimeStatus === 'UPCOMING' &&
+          now < sessionStartTime &&
           sessionData.status !== 'ONGOING' &&
           sessionData.status !== 'FINISHED';
-        // Cho phép tạo QR khi đã đến giờ (realTimeStatus = ONGOING) và chưa hết giờ
-        // Không cần check status === 'ONGOING' vì có thể session chưa được start thủ công
+        // Cho phép tạo QR chỉ khi lớp đã bắt đầu (status = ONGOING)
         sessionData.canStartAttendance =
-          realTimeStatus === 'ONGOING' &&
-          (!sessionEndTime || nowTimestamp < sessionEndTime.getTime());
+          sessionData.status === 'ONGOING' && (!sessionEndTime || now < sessionEndTime);
 
         if (sessionData.attendanceSession) {
           sessionData.hasAttendance = true;
@@ -382,26 +363,25 @@ const startSession = async (req, res) => {
     }
 
     // Check if session can be started
-    const nowTimestamp = Date.now();
-    // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
-    // Use UTC to avoid timezone issues when deployed
-    const dateStr = session.date; // Format: YYYY-MM-DD
+    const now = new Date();
+    const sessionDate = new Date(session.date);
     const [startHour, startMinute] = session.start_time.split(':').map(Number);
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const sessionStartTime = new Date(Date.UTC(year, month - 1, day, startHour, startMinute, 0));
+    const sessionStartTime = new Date(sessionDate);
+    sessionStartTime.setHours(startHour, startMinute, 0, 0);
 
     // Calculate end time
     let sessionEndTime = null;
     if (session.end_time) {
       const [endHour, endMinute] = session.end_time.split(':').map(Number);
-      sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
+      sessionEndTime = new Date(sessionDate);
+      sessionEndTime.setHours(endHour, endMinute, 0, 0);
     } else {
       sessionEndTime = new Date(sessionStartTime);
-      sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
+      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
     }
 
     // Chỉ cho phép bắt đầu nếu chưa đến giờ và chưa bắt đầu
-    if (nowTimestamp >= sessionStartTime.getTime()) {
+    if (now >= sessionStartTime) {
       return res.status(400).json({
         success: false,
         message: 'Buổi học đã đến giờ, không thể bắt đầu sớm',
@@ -470,23 +450,22 @@ const startAttendance = async (req, res) => {
     }
 
     // Check if session has ended
-    const nowTimestamp = Date.now();
-    // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
-    // Use UTC to avoid timezone issues when deployed
-    const dateStr = session.date; // Format: YYYY-MM-DD
-    const [year, month, day] = dateStr.split('-').map(Number);
+    const now = new Date();
+    const sessionDate = new Date(session.date);
     let sessionEndTime = null;
     if (session.end_time) {
       const [endHour, endMinute] = session.end_time.split(':').map(Number);
-      sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
+      sessionEndTime = new Date(sessionDate);
+      sessionEndTime.setHours(endHour, endMinute, 0, 0);
     } else {
       const [startHour, startMinute] = session.start_time.split(':').map(Number);
-      const sessionStartTime = new Date(Date.UTC(year, month - 1, day, startHour, startMinute, 0));
+      const sessionStartTime = new Date(sessionDate);
+      sessionStartTime.setHours(startHour, startMinute, 0, 0);
       sessionEndTime = new Date(sessionStartTime);
-      sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
+      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
     }
 
-    if (sessionEndTime && nowTimestamp >= sessionEndTime.getTime()) {
+    if (sessionEndTime && now >= sessionEndTime) {
       // Tự động chuyển sang FINISHED
       await session.update({ status: 'FINISHED' });
       return res.status(400).json({
