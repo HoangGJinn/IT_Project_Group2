@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../utils/api';
+import LocationPicker from '../../components/LocationPicker';
+import { FaQrcode, FaCamera, FaKeyboard, FaTimesCircle, FaCheckCircle } from 'react-icons/fa';
 
 function ScanQR() {
   const [searchParams] = useSearchParams();

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import LocationPicker from '../components/LocationPicker';
+import { QRCodeSVG } from 'qrcode.react';
 
 function TeachingSchedule() {
   const navigate = useNavigate();

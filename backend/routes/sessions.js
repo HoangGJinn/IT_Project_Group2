@@ -3,11 +3,31 @@ const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const sessionController = require('../controllers/sessionController');
 
-router.get('/classes/:classId', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.getSessions);
-router.post('/classes/:classId', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.createSession);
+router.get(
+  '/classes/:classId',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  sessionController.getSessions
+);
+router.post(
+  '/classes/:classId',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  sessionController.createSession
+);
 router.put('/:id', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.updateSession);
-router.post('/:id/start', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.startSession);
-router.post('/:id/attendance/start', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.startAttendance);
+router.delete('/:id', authenticate, authorize('TEACHER', 'ADMIN'), sessionController.deleteSession);
+router.post(
+  '/:id/start',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  sessionController.startSession
+);
+router.post(
+  '/:id/attendance/start',
+  authenticate,
+  authorize('TEACHER', 'ADMIN'),
+  sessionController.startAttendance
+);
 
 module.exports = router;
-
