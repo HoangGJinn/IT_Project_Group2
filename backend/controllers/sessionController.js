@@ -35,21 +35,26 @@ const getSessions = async (req, res) => {
         const sessionData = session.toJSON();
 
         // Calculate real-time status based on current time
-        const sessionDate = new Date(sessionData.date);
+        // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
+        // Use UTC to avoid timezone issues when deployed
+        const dateStr = sessionData.date; // Format: YYYY-MM-DD
         const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
-        const sessionStartTime = new Date(sessionDate);
-        sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+        // Create UTC date for session start time
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const sessionStartTime = new Date(
+          Date.UTC(year, month - 1, day, startHour, startMinute, 0)
+        );
 
         // Calculate end time
         let sessionEndTime = null;
         if (sessionData.end_time) {
           const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
-          sessionEndTime = new Date(sessionDate);
-          sessionEndTime.setHours(endHour, endMinute, 0, 0);
+          sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
         } else {
           // Default to 90 minutes if no end_time
           sessionEndTime = new Date(sessionStartTime);
-          sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+          sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
         }
 
         // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
@@ -364,20 +369,21 @@ const startSession = async (req, res) => {
 
     // Check if session can be started
     const now = new Date();
-    const sessionDate = new Date(session.date);
+    // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
+    // Use UTC to avoid timezone issues when deployed
+    const dateStr = session.date; // Format: YYYY-MM-DD
     const [startHour, startMinute] = session.start_time.split(':').map(Number);
-    const sessionStartTime = new Date(sessionDate);
-    sessionStartTime.setHours(startHour, startMinute, 0, 0);
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const sessionStartTime = new Date(Date.UTC(year, month - 1, day, startHour, startMinute, 0));
 
     // Calculate end time
     let sessionEndTime = null;
     if (session.end_time) {
       const [endHour, endMinute] = session.end_time.split(':').map(Number);
-      sessionEndTime = new Date(sessionDate);
-      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+      sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
     } else {
       sessionEndTime = new Date(sessionStartTime);
-      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+      sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
     }
 
     // Chỉ cho phép bắt đầu nếu chưa đến giờ và chưa bắt đầu
@@ -451,18 +457,19 @@ const startAttendance = async (req, res) => {
 
     // Check if session has ended
     const now = new Date();
-    const sessionDate = new Date(session.date);
+    // Parse date string (YYYY-MM-DD) and time string (HH:mm:ss) to create Date object
+    // Use UTC to avoid timezone issues when deployed
+    const dateStr = session.date; // Format: YYYY-MM-DD
+    const [year, month, day] = dateStr.split('-').map(Number);
     let sessionEndTime = null;
     if (session.end_time) {
       const [endHour, endMinute] = session.end_time.split(':').map(Number);
-      sessionEndTime = new Date(sessionDate);
-      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+      sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0));
     } else {
       const [startHour, startMinute] = session.start_time.split(':').map(Number);
-      const sessionStartTime = new Date(sessionDate);
-      sessionStartTime.setHours(startHour, startMinute, 0, 0);
+      const sessionStartTime = new Date(Date.UTC(year, month - 1, day, startHour, startMinute, 0));
       sessionEndTime = new Date(sessionStartTime);
-      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+      sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
     }
 
     if (sessionEndTime && now >= sessionEndTime) {
