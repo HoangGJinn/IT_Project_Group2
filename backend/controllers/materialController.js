@@ -1,31 +1,27 @@
-const { SessionMaterial, Session, Teacher } = require('../models');
+const { SessionMaterial, Session, Teacher, Class } = require('../models');
+const { Op } = require('sequelize');
 
 const uploadMaterial = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, file_url } = req.body;
 
-    // Check if file is uploaded via multer or URL is provided
-    let finalFileUrl = file_url;
-    let fileType = null;
-    let fileSize = null;
-
-    if (req.file) {
-      // File uploaded via multer
-      finalFileUrl = `/uploads/${req.file.filename}`;
-      fileType = req.file.mimetype;
-      fileSize = req.file.size;
-    } else if (!file_url) {
+    // Only URL is supported for file upload
+    if (!file_url) {
       return res.status(400).json({
         success: false,
-        message: 'File or file_url is required',
+        message: 'file_url is required',
       });
-    } else {
-      // URL provided, try to extract file type from URL
-      const urlParts = file_url.split('.');
-      if (urlParts.length > 1) {
-        fileType = urlParts[urlParts.length - 1].toLowerCase();
-      }
+    }
+
+    const finalFileUrl = file_url;
+    let fileType = null;
+    const fileSize = null;
+
+    // Try to extract file type from URL
+    const urlParts = file_url.split('.');
+    if (urlParts.length > 1) {
+      fileType = urlParts[urlParts.length - 1].toLowerCase();
     }
 
     if (!name) {
@@ -87,7 +83,65 @@ const deleteMaterial = async (req, res) => {
   }
 };
 
+const getMaterialsByClass = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    // Verify class exists
+    const classData = await Class.findByPk(classId);
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Class not found',
+      });
+    }
+
+    // Get all sessions for this class with materials
+    const sessions = await Session.findAll({
+      where: { class_id: classId },
+      include: [
+        {
+          model: SessionMaterial,
+          as: 'materials',
+          separate: true,
+          order: [['created_at', 'DESC']],
+        },
+      ],
+      order: [['date', 'DESC']],
+    });
+
+    // Format response - include all sessions, even if they have no materials
+    const materialsBySession = sessions.map(session => ({
+      session_id: session.session_id,
+      session_date: session.date,
+      session_topic: session.topic,
+      session_number: session.session_number,
+      session_room: session.room,
+      materials: (session.materials || []).map(material => ({
+        material_id: material.material_id,
+        name: material.name,
+        file_url: material.file_url,
+        file_type: material.file_type,
+        file_size: material.file_size,
+        created_at: material.created_at,
+      })),
+    }));
+
+    res.json({
+      success: true,
+      data: materialsBySession,
+    });
+  } catch (error) {
+    console.error('Get materials by class error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
 module.exports = {
   uploadMaterial,
   deleteMaterial,
+  getMaterialsByClass,
 };

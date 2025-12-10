@@ -11,14 +11,8 @@ function ScanQR() {
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
 
-  // Check if token is in URL (from QR code scan)
-  useEffect(() => {
-    const token = searchParams.get('token');
-    if (token && token.trim()) {
-      // Only process if token is not empty
-      processQRCode(token.trim());
-    }
-  }, [searchParams]);
+  // Note: We don't auto-process token from URL anymore
+  // User must manually start scanning or enter code
 
   const html5QrCodeRef = useRef(null);
 

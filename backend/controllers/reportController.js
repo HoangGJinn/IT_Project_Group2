@@ -27,7 +27,7 @@ const getAttendanceReport = async (req, res) => {
     const classes = await Class.findAll({ where });
     const classIds = classes.map(c => c.class_id);
 
-    // Get all sessions for these classes
+    // Get all FINISHED sessions for these classes (to match getClassReport logic)
     let sessions = [];
     if (classIds.length > 0) {
       sessions = await Session.findAll({
@@ -38,6 +38,7 @@ const getAttendanceReport = async (req, res) => {
       });
     }
 
+    const totalFinishedSessions = sessions.length;
     const sessionIds = sessions.map(s => s.session_id);
 
     // Get attendance records
@@ -74,38 +75,91 @@ const getAttendanceReport = async (req, res) => {
       });
     }
 
-    // Calculate overview
-    const total = records.length;
-    const onTime = records.filter(r => r.status === 'PRESENT').length;
-    const late = records.filter(r => r.status === 'LATE').length;
-    const absent = records.filter(r => r.status === 'ABSENT').length;
+    // Get all enrolled students across all classes
+    const enrollments = await Enrollment.findAll({
+      where: { class_id: { [Op.in]: classIds }, status: 'ENROLLED' },
+      include: [
+        {
+          model: Student,
+          as: 'student',
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['full_name'],
+            },
+          ],
+        },
+      ],
+    });
 
-    // Calculate validation stats
-    const validRecords = records.filter(r => r.is_valid === 1).length;
-    const invalidRecords = records.filter(r => r.is_valid === 0).length;
-    const pendingRecords = records.filter(r => r.is_valid === null).length;
-    const recordsWithValidation = records.filter(r => r.is_valid !== null).length;
+    // Calculate total sessions per student (only FINISHED sessions, to match getClassReport)
+    const studentTotalSessions = new Map();
+    enrollments.forEach(enrollment => {
+      const studentId = enrollment.student_id;
+      studentTotalSessions.set(studentId, totalFinishedSessions);
+    });
+
+    // Filter only PRESENT and LATE records (to match getClassReport logic)
+    const attendanceRecords = records.filter(r => r.status === 'PRESENT' || r.status === 'LATE');
+    const totalRecords = attendanceRecords.length;
+    const onTime = attendanceRecords.filter(r => r.status === 'PRESENT').length;
+    const late = attendanceRecords.filter(r => r.status === 'LATE').length;
+
+    // Calculate absent: totalPossibleAttendances - totalAttended (to match getClassReport)
+    const totalStudents = enrollments.length;
+    const totalPossibleAttendances = totalFinishedSessions * totalStudents;
+    const totalAttended = onTime + late;
+    const absent = Math.max(0, totalPossibleAttendances - totalAttended);
+
+    // Calculate validation stats (from all attendance records)
+    const validRecords = attendanceRecords.filter(r => r.is_valid === 1).length;
+    const invalidRecords = attendanceRecords.filter(r => r.is_valid === 0).length;
+    const pendingRecords = attendanceRecords.filter(r => r.is_valid === null).length;
+    const recordsWithValidation = attendanceRecords.filter(r => r.is_valid !== null).length;
 
     // Group by student
     const studentMap = new Map();
-    records.forEach(record => {
+
+    // Initialize all enrolled students
+    enrollments.forEach(enrollment => {
+      const studentId = enrollment.student_id;
+      if (!studentMap.has(studentId)) {
+        studentMap.set(studentId, {
+          student_id: studentId,
+          student_code: enrollment.student.student_code,
+          full_name: enrollment.student.user.full_name,
+          total: studentTotalSessions.get(studentId) || 0,
+          onTime: 0,
+          late: 0,
+          valid: 0,
+          invalid: 0,
+          pending: 0,
+        });
+      }
+    });
+
+    // Count attendance records (only PRESENT and LATE, to match getClassReport)
+    attendanceRecords.forEach(record => {
       const studentId = record.student_id;
       if (!studentMap.has(studentId)) {
         studentMap.set(studentId, {
           student_id: studentId,
           student_code: record.student.student_code,
           full_name: record.student.user.full_name,
-          total: 0,
-          attended: 0,
+          total: studentTotalSessions.get(studentId) || 0,
+          onTime: 0,
+          late: 0,
           valid: 0,
           invalid: 0,
           pending: 0,
         });
       }
       const student = studentMap.get(studentId);
-      student.total++;
-      if (record.status === 'PRESENT' || record.status === 'LATE') {
-        student.attended++;
+      if (record.status === 'PRESENT') {
+        student.onTime++;
+      } else if (record.status === 'LATE') {
+        student.late++;
       }
       // Count validation status
       if (record.is_valid === 1) {
@@ -117,30 +171,42 @@ const getAttendanceReport = async (req, res) => {
       }
     });
 
-    const students = Array.from(studentMap.values()).map(s => ({
-      student_id: s.student_id,
-      student_code: s.student_code,
-      full_name: s.full_name,
-      total_sessions: `${s.attended}/${s.total}`,
-      attendance_rate: s.total > 0 ? ((s.attended / s.total) * 100).toFixed(0) + '%' : '0%',
-      valid_count: s.valid,
-      invalid_count: s.invalid,
-      pending_count: s.pending,
-      valid_rate: s.attended > 0 ? ((s.valid / s.attended) * 100).toFixed(0) + '%' : '0%',
-      invalid_rate: s.attended > 0 ? ((s.invalid / s.attended) * 100).toFixed(0) + '%' : '0%',
-    }));
+    const students = Array.from(studentMap.values()).map(s => {
+      const attended = s.onTime + s.late;
+      const absentCount = s.total - attended;
+      return {
+        student_id: s.student_id,
+        student_code: s.student_code,
+        full_name: s.full_name,
+        total_sessions: s.total,
+        attendance_rate: s.total > 0 ? ((attended / s.total) * 100).toFixed(1) + '%' : '0%',
+        valid_count: s.valid,
+        invalid_count: s.invalid,
+        pending_count: s.pending,
+        valid_rate: attended > 0 ? ((s.valid / attended) * 100).toFixed(1) + '%' : '0%',
+        invalid_rate: attended > 0 ? ((s.invalid / attended) * 100).toFixed(1) + '%' : '0%',
+      };
+    });
 
     res.json({
       success: true,
       data: {
         overview: {
-          on_time: total > 0 ? Math.round((onTime / total) * 100) : 0,
-          late: total > 0 ? Math.round((late / total) * 100) : 0,
-          absent: total > 0 ? Math.round((absent / total) * 100) : 0,
+          total_sessions: totalFinishedSessions,
+          total_records: totalRecords,
+          on_time:
+            totalPossibleAttendances > 0
+              ? Math.round((onTime / totalPossibleAttendances) * 100)
+              : 0,
+          late:
+            totalPossibleAttendances > 0 ? Math.round((late / totalPossibleAttendances) * 100) : 0,
+          absent:
+            totalPossibleAttendances > 0
+              ? Math.round((absent / totalPossibleAttendances) * 100)
+              : 0,
           on_time_count: onTime,
           late_count: late,
           absent_count: absent,
-          total_records: total,
           valid:
             recordsWithValidation > 0
               ? Math.round((validRecords / recordsWithValidation) * 100)
@@ -149,7 +215,7 @@ const getAttendanceReport = async (req, res) => {
             recordsWithValidation > 0
               ? Math.round((invalidRecords / recordsWithValidation) * 100)
               : 0,
-          pending: total > 0 ? Math.round((pendingRecords / total) * 100) : 0,
+          pending: totalRecords > 0 ? Math.round((pendingRecords / totalRecords) * 100) : 0,
           valid_count: validRecords,
           invalid_count: invalidRecords,
           pending_count: pendingRecords,

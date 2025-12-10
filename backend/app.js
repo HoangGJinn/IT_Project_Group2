@@ -92,6 +92,8 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/schedule', require('./routes/schedule'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/courses', require('./routes/courses'));
+app.use('/api/teachers', require('./routes/teacher'));
+app.use('/api/admin/students', require('./routes/adminstudent')); // admin manager
 
 // Error handling middleware
 app.use((err, req, res, next) => {

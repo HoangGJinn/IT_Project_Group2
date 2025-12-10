@@ -49,6 +49,8 @@ function GeneralReport() {
       if (response.data.success) {
         const classes = response.data.data || [];
 
+        console.log('Fetched classes:', classes.length, 'classes');
+
         // Group classes by course_id, school_year, and semester
         const courseMap = new Map();
 
@@ -58,33 +60,62 @@ function GeneralReport() {
             if (!courseMap.has(key)) {
               courseMap.set(key, {
                 course_id: cls.course.course_id,
-                course_name: cls.course.name,
+                course_name: cls.name || cls.course.name, // Use class name (teacher's custom name) if available, fallback to course name
                 course_code: cls.course.code,
                 school_year: cls.school_year,
                 semester: cls.semester,
                 class_count: 0,
+                class_names: [], // Store all class names for this course
               });
             }
             courseMap.get(key).class_count++;
+            // Add class name to the list
+            if (cls.name && !courseMap.get(key).class_names.includes(cls.name)) {
+              courseMap.get(key).class_names.push(cls.name);
+            }
+          } else {
+            console.warn('Class missing course info:', cls);
           }
         });
 
         // Convert to array and sort
-        const courseListArray = Array.from(courseMap.values()).sort((a, b) => {
-          // Sort by school_year (newest first), then by semester, then by course name
-          if (a.school_year !== b.school_year) {
-            return b.school_year.localeCompare(a.school_year);
-          }
-          if (a.semester !== b.semester) {
-            return a.semester.localeCompare(b.semester);
-          }
-          return a.course_name.localeCompare(b.course_name);
-        });
+        const courseListArray = Array.from(courseMap.values())
+          .map(course => {
+            // If multiple classes, show the first class name or combine them
+            if (course.class_names.length > 1) {
+              // If multiple classes, use first class name with count
+              course.display_name = `${course.class_names[0]} (${course.class_count} lớp)`;
+            } else if (course.class_names.length === 1) {
+              // Single class, use its name
+              course.display_name = course.class_names[0];
+            } else {
+              // Fallback to course name if no class names
+              course.display_name = course.course_name;
+            }
+            return course;
+          })
+          .sort((a, b) => {
+            // Sort by school_year (newest first), then by semester, then by display name
+            if (a.school_year !== b.school_year) {
+              return b.school_year.localeCompare(a.school_year);
+            }
+            if (a.semester !== b.semester) {
+              return a.semester.localeCompare(b.semester);
+            }
+            return a.display_name.localeCompare(b.display_name);
+          });
 
+        console.log('Grouped courses:', courseListArray.length, 'courses');
         setCourseList(courseListArray);
+      } else {
+        console.error('API response not successful:', response.data);
+        setCourseList([]);
       }
     } catch (error) {
       console.error('Fetch course list error:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      setCourseList([]);
+      alert('Không thể tải danh sách môn học: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoadingCourses(false);
     }
@@ -248,7 +279,7 @@ function GeneralReport() {
                 >
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-lg font-semibold text-gray-800 flex-1">
-                      {course.course_name}
+                      {course.display_name || course.course_name}
                     </h3>
                     {isSelected && <span className="ml-2 text-blue-600 text-xl">✓</span>}
                   </div>
@@ -284,7 +315,15 @@ function GeneralReport() {
                 c.school_year === selectedYear &&
                 c.semester ===
                   (selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : 'HK3')
-            )?.course_name || 'Tất cả môn học'}{' '}
+            )?.display_name ||
+              courseList.find(
+                c =>
+                  c.course_id.toString() === selectedSubject &&
+                  c.school_year === selectedYear &&
+                  c.semester ===
+                    (selectedSemester === '1' ? 'HK1' : selectedSemester === '2' ? 'HK2' : 'HK3')
+              )?.course_name ||
+              'Tất cả môn học'}{' '}
             - {selectedYear} -{' '}
             {selectedSemester === '1'
               ? 'Học kì 1'

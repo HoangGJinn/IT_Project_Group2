@@ -22,6 +22,7 @@ function StudentClassDetail() {
   const [classInfo, setClassInfo] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -35,6 +36,8 @@ function StudentClassDetail() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [manualToken, setManualToken] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
+  const [showSessionDetailModal, setShowSessionDetailModal] = useState(false);
+  const [selectedSessionDetail, setSelectedSessionDetail] = useState(null);
 
   useEffect(() => {
     fetchClassDetail();
@@ -66,8 +69,8 @@ function StudentClassDetail() {
           description: data.course?.description || 'Chưa có mô tả',
         });
         setSessions(data.sessions || []);
-        // Materials would come from a separate endpoint if available
-        setMaterials([]);
+        // Fetch materials
+        fetchMaterials();
       }
     } catch (error) {
       console.error('Fetch class detail error:', error);
@@ -75,6 +78,42 @@ function StudentClassDetail() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMaterials = async () => {
+    try {
+      setMaterialsLoading(true);
+      const response = await api.get(`/materials/classes/${id}`);
+      if (response.data.success) {
+        setMaterials(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Fetch materials error:', error);
+      setMaterials([]);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
+
+  const formatFileSize = bytes => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  };
+
+  const getFileIcon = fileType => {
+    if (!fileType) return '📄';
+    const type = fileType.toLowerCase();
+    if (type.includes('pdf')) return '📕';
+    if (type.includes('word') || type.includes('doc')) return '📘';
+    if (type.includes('excel') || type.includes('xls')) return '📗';
+    if (type.includes('powerpoint') || type.includes('ppt')) return '📙';
+    if (type.includes('image')) return '🖼️';
+    if (type.includes('video')) return '🎥';
+    if (type.includes('zip') || type.includes('rar')) return '📦';
+    return '📄';
   };
 
   // Handle session click - show QR or attendance info
@@ -476,6 +515,145 @@ function StudentClassDetail() {
                   <p className="text-sm text-gray-600 mb-1">Mô tả môn học</p>
                   <p className="text-gray-800">{classInfo.description}</p>
                 </div>
+                {(() => {
+                  // Find next session (prioritize ONGOING, then UPCOMING)
+                  const now = new Date();
+
+                  // Calculate real-time status for each session
+                  const sessionsWithStatus = sessions
+                    .filter(session => session.status !== 'CANCELLED')
+                    .map(session => {
+                      const sessionDate = new Date(session.date);
+                      const [startHour, startMinute] = (session.start_time || '00:00')
+                        .split(':')
+                        .map(Number);
+                      const sessionStartTime = new Date(sessionDate);
+                      sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                      let sessionEndTime = null;
+                      if (session.end_time) {
+                        const [endHour, endMinute] = session.end_time.split(':').map(Number);
+                        sessionEndTime = new Date(sessionDate);
+                        sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                      } else {
+                        sessionEndTime = new Date(sessionStartTime);
+                        sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                      }
+
+                      let realTimeStatus = session.status;
+                      if (session.status !== 'CANCELLED') {
+                        if (now < sessionStartTime) {
+                          realTimeStatus = 'UPCOMING';
+                        } else if (
+                          now >= sessionStartTime &&
+                          (!sessionEndTime || now < sessionEndTime)
+                        ) {
+                          realTimeStatus = 'ONGOING';
+                        } else if (sessionEndTime && now >= sessionEndTime) {
+                          realTimeStatus = 'FINISHED';
+                        }
+                      }
+
+                      return {
+                        ...session,
+                        realTimeStatus,
+                        sessionStartTime,
+                        sessionEndTime,
+                      };
+                    });
+
+                  // Find ONGOING session first
+                  const ongoingSession = sessionsWithStatus.find(
+                    s => s.realTimeStatus === 'ONGOING'
+                  );
+
+                  // If no ONGOING, find next UPCOMING
+                  const nextSession =
+                    ongoingSession ||
+                    sessionsWithStatus
+                      .filter(s => s.realTimeStatus === 'UPCOMING')
+                      .sort((a, b) => {
+                        const dateA = new Date(`${a.date} ${a.start_time || '00:00'}`);
+                        const dateB = new Date(`${b.date} ${b.start_time || '00:00'}`);
+                        return dateA - dateB;
+                      })[0];
+
+                  if (nextSession) {
+                    const sessionDate = new Date(nextSession.date);
+                    const dayName = [
+                      'Chủ Nhật',
+                      'Thứ 2',
+                      'Thứ 3',
+                      'Thứ 4',
+                      'Thứ 5',
+                      'Thứ 6',
+                      'Thứ 7',
+                    ][sessionDate.getDay()];
+
+                    const isOngoing = nextSession.realTimeStatus === 'ONGOING';
+
+                    return (
+                      <div
+                        onClick={() => {
+                          setSelectedSessionDetail(nextSession);
+                          setShowSessionDetailModal(true);
+                        }}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${isOngoing ? 'bg-green-50 border-green-200 hover:bg-green-100' : 'bg-blue-50 border-blue-200 hover:bg-blue-100'}`}
+                      >
+                        <p
+                          className={`text-sm font-semibold mb-2 ${isOngoing ? 'text-green-800' : 'text-blue-800'}`}
+                        >
+                          {isOngoing ? '🟢 Buổi học đang diễn ra' : '📅 Buổi học sắp tới gần nhất'}
+                        </p>
+                        <div className="space-y-1.5 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600">Ngày:</span>
+                            <span className="font-medium text-gray-800">
+                              {dayName},{' '}
+                              {sessionDate.toLocaleDateString('vi-VN', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600">Thời gian:</span>
+                            <span className="font-medium text-gray-800">
+                              {nextSession.start_time}
+                              {nextSession.end_time ? ` - ${nextSession.end_time}` : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600">Phòng:</span>
+                            <span
+                              className={`font-medium ${!nextSession.room ? 'text-gray-400 italic' : 'text-gray-800'}`}
+                            >
+                              {nextSession.room || 'Chưa có phòng'}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-gray-600">Chủ đề:</span>
+                            <span
+                              className={`font-medium ${!nextSession.topic ? 'text-gray-400 italic' : 'text-gray-800'}`}
+                            >
+                              {nextSession.topic || 'Chưa có chủ đề'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="text-xs text-gray-500 italic">Click để xem chi tiết</p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600">Chưa có buổi học sắp tới</p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -656,67 +834,118 @@ function StudentClassDetail() {
                                   const daysUntil = getDaysUntil(session.date);
                                   const sessionStatus = session.realTimeStatus || session.status;
 
+                                  // Count materials for this session
+                                  const sessionMaterials = materials.find(
+                                    m => m.session_id === session.session_id
+                                  );
+                                  const materialCount = sessionMaterials?.materials?.length || 0;
+
                                   return (
                                     <div
                                       key={session.session_id}
                                       onClick={() => handleSessionClick(session)}
-                                      className={`bg-gradient-to-r rounded-lg p-4 border-l-4 transition-all hover:shadow-lg cursor-pointer ${
+                                      className={`bg-white rounded-lg p-5 border-l-4 transition-all hover:shadow-xl cursor-pointer transform hover:-translate-y-1 ${
                                         isToday
-                                          ? 'border-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md'
+                                          ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-lg'
                                           : sessionStatus === 'ONGOING'
-                                            ? 'border-green-500 bg-gradient-to-r from-green-50 to-emerald-50'
-                                            : 'border-gray-300 bg-white hover:border-blue-400'
+                                            ? 'border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 shadow-lg'
+                                            : 'border-gray-300 hover:border-blue-400 shadow-sm'
                                       }`}
                                     >
                                       <div className="flex items-start justify-between mb-3">
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                            <h5 className="font-bold text-gray-800 text-base">
+                                            <h5 className="font-bold text-gray-800 text-lg">
                                               {dayName}
                                             </h5>
                                             {isToday && (
-                                              <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full font-semibold">
+                                              <span className="px-2.5 py-1 bg-blue-500 text-white text-xs rounded-full font-semibold shadow-sm">
                                                 Hôm nay
                                               </span>
                                             )}
                                             {!isToday && daysUntil > 0 && (
-                                              <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
+                                              <span className="px-2.5 py-1 bg-gray-200 text-gray-700 text-xs rounded-full font-medium">
                                                 Còn {daysUntil} ngày
                                               </span>
                                             )}
                                             {sessionStatus === 'ONGOING' && (
-                                              <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full font-semibold animate-pulse">
+                                              <span className="px-2.5 py-1 bg-green-500 text-white text-xs rounded-full font-semibold animate-pulse shadow-sm">
                                                 Đang diễn ra
                                               </span>
                                             )}
                                           </div>
-                                          <p className="text-sm text-gray-600 mb-2 font-medium">
+                                          <p className="text-sm text-gray-600 mb-3 font-medium">
                                             {sessionDate.toLocaleDateString('vi-VN', {
                                               day: 'numeric',
                                               month: 'long',
                                               year: 'numeric',
                                             })}
                                           </p>
-                                          <div className="space-y-1.5 text-sm text-gray-700">
-                                            {session.room && (
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-gray-400">📍</span>
-                                                <span className="font-medium">{session.room}</span>
-                                              </div>
-                                            )}
+                                          <div className="space-y-2 text-sm">
                                             <div className="flex items-center gap-2">
-                                              <span className="text-gray-400">🕐</span>
+                                              <span className="text-gray-400 text-base">📍</span>
+                                              <span
+                                                className={`font-medium ${!session.room ? 'text-gray-400 italic' : 'text-gray-700'}`}
+                                              >
+                                                {session.room || 'Chưa có phòng'}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-gray-400 text-base">🕐</span>
                                               <span className="font-semibold text-blue-600">
                                                 {session.start_time}
                                                 {session.end_time ? ` - ${session.end_time}` : ''}
                                               </span>
                                             </div>
-                                            {session.topic && (
-                                              <div className="flex items-start gap-2">
-                                                <span className="text-gray-400 mt-0.5">📝</span>
-                                                <span className="font-medium line-clamp-2">
-                                                  {session.topic}
+                                            <div className="flex items-start gap-2">
+                                              <span className="text-gray-400 mt-0.5 text-base">
+                                                📝
+                                              </span>
+                                              <span
+                                                className={`font-medium line-clamp-2 ${!session.topic ? 'text-gray-400 italic' : 'text-gray-700'}`}
+                                              >
+                                                {session.topic || 'Chưa có chủ đề'}
+                                              </span>
+                                            </div>
+                                            {materialCount > 0 && (
+                                              <div className="flex items-center gap-2 pt-1">
+                                                <span className="text-gray-400 text-base">📚</span>
+                                                <span className="text-sm font-medium text-purple-600">
+                                                  {materialCount} tài liệu
                                                 </span>
+                                              </div>
+                                            )}
+                                            {/* Attendance Status for upcoming sessions */}
+                                            {session.hasAttended !== undefined && (
+                                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                                {session.hasAttended ? (
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-green-600 text-base">
+                                                      ✅
+                                                    </span>
+                                                    <span className="text-sm font-medium text-green-600">
+                                                      Đã điểm danh
+                                                      {session.attendanceStatus && (
+                                                        <span className="ml-1">
+                                                          (
+                                                          {session.attendanceStatus === 'PRESENT'
+                                                            ? 'Đúng giờ'
+                                                            : 'Muộn'}
+                                                          )
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                ) : (
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-gray-400 text-base">
+                                                      ⏳
+                                                    </span>
+                                                    <span className="text-sm text-gray-500">
+                                                      Chưa điểm danh
+                                                    </span>
+                                                  </div>
+                                                )}
                                               </div>
                                             )}
                                           </div>
@@ -842,61 +1071,114 @@ function StudentClassDetail() {
                                   ][sessionDate.getDay()];
                                   const daysAgo = getDaysAgo(session.date);
 
+                                  // Count materials for this session
+                                  const sessionMaterials = materials.find(
+                                    m => m.session_id === session.session_id
+                                  );
+                                  const materialCount = sessionMaterials?.materials?.length || 0;
+
                                   return (
                                     <div
                                       key={session.session_id}
                                       onClick={() => handleSessionClick(session)}
-                                      className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border-l-4 border-green-500 hover:shadow-md transition-all cursor-pointer"
+                                      className="bg-white rounded-lg p-5 border-l-4 border-green-500 hover:shadow-xl transition-all cursor-pointer transform hover:-translate-y-1 shadow-sm"
                                     >
                                       <div className="flex items-start justify-between mb-3">
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                            <h5 className="font-bold text-gray-800 text-base">
+                                            <h5 className="font-bold text-gray-800 text-lg">
                                               {dayName}
                                             </h5>
                                             {daysAgo === 0 && (
-                                              <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full font-semibold">
+                                              <span className="px-2.5 py-1 bg-green-500 text-white text-xs rounded-full font-semibold shadow-sm">
                                                 Hôm nay
                                               </span>
                                             )}
                                             {daysAgo === 1 && (
-                                              <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
+                                              <span className="px-2.5 py-1 bg-gray-200 text-gray-700 text-xs rounded-full font-medium">
                                                 Hôm qua
                                               </span>
                                             )}
                                             {daysAgo > 1 && (
-                                              <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
+                                              <span className="px-2.5 py-1 bg-gray-200 text-gray-700 text-xs rounded-full font-medium">
                                                 {daysAgo} ngày trước
                                               </span>
                                             )}
                                           </div>
-                                          <p className="text-sm text-gray-600 mb-2 font-medium">
+                                          <p className="text-sm text-gray-600 mb-3 font-medium">
                                             {sessionDate.toLocaleDateString('vi-VN', {
                                               day: 'numeric',
                                               month: 'long',
                                               year: 'numeric',
                                             })}
                                           </p>
-                                          <div className="space-y-1.5 text-sm text-gray-700">
-                                            {session.room && (
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-gray-400">📍</span>
-                                                <span className="font-medium">{session.room}</span>
-                                              </div>
-                                            )}
+                                          <div className="space-y-2 text-sm">
                                             <div className="flex items-center gap-2">
-                                              <span className="text-gray-400">🕐</span>
-                                              <span className="font-semibold text-green-600">
+                                              <span className="text-gray-400 text-base">📍</span>
+                                              <span
+                                                className={`font-medium ${!session.room ? 'text-gray-400 italic' : 'text-gray-700'}`}
+                                              >
+                                                {session.room || 'Chưa có phòng'}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-gray-400 text-base">🕐</span>
+                                              <span className="font-semibold text-gray-800">
                                                 {session.start_time}
                                                 {session.end_time ? ` - ${session.end_time}` : ''}
                                               </span>
                                             </div>
-                                            {session.topic && (
-                                              <div className="flex items-start gap-2">
-                                                <span className="text-gray-400 mt-0.5">📝</span>
-                                                <span className="font-medium line-clamp-2">
-                                                  {session.topic}
+                                            <div className="flex items-start gap-2">
+                                              <span className="text-gray-400 mt-0.5 text-base">
+                                                📝
+                                              </span>
+                                              <span
+                                                className={`font-medium line-clamp-2 ${!session.topic ? 'text-gray-400 italic' : 'text-gray-700'}`}
+                                              >
+                                                {session.topic || 'Chưa có chủ đề'}
+                                              </span>
+                                            </div>
+                                            {materialCount > 0 && (
+                                              <div className="flex items-center gap-2 pt-1">
+                                                <span className="text-gray-400 text-base">📚</span>
+                                                <span className="text-sm font-medium text-purple-600">
+                                                  {materialCount} tài liệu
                                                 </span>
+                                              </div>
+                                            )}
+                                            {/* Attendance Status for finished sessions */}
+                                            {session.hasAttended !== undefined && (
+                                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                                {session.hasAttended ? (
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-green-600 text-base">
+                                                      ✅
+                                                    </span>
+                                                    <span className="text-sm font-medium text-green-600">
+                                                      Đã điểm danh
+                                                      {session.attendanceStatus && (
+                                                        <span className="ml-1">
+                                                          (
+                                                          {session.attendanceStatus === 'PRESENT'
+                                                            ? 'Đúng giờ'
+                                                            : session.attendanceStatus === 'LATE'
+                                                              ? 'Muộn'
+                                                              : 'Vắng'}
+                                                          )
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                ) : (
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-red-600 text-base">
+                                                      ❌
+                                                    </span>
+                                                    <span className="text-sm font-medium text-red-600">
+                                                      Vắng mặt
+                                                    </span>
+                                                  </div>
+                                                )}
                                               </div>
                                             )}
                                           </div>
@@ -922,27 +1204,87 @@ function StudentClassDetail() {
       {activeTab === 'materials' && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold mb-4">Tài Liệu Học Tập</h2>
-          <div className="space-y-3">
-            {materials.map(material => (
-              <div
-                key={material.id}
-                className="flex items-center justify-between p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">
-                    {material.type === 'pdf' ? 'PDF' : material.type === 'docx' ? 'DOC' : 'VID'}
+          {materialsLoading ? (
+            <div className="text-center py-8">
+              <p className="text-gray-600">Đang tải tài liệu...</p>
+            </div>
+          ) : materials.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
+              <p className="text-gray-600">Chưa có tài liệu học tập nào</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {materials.map(sessionGroup => (
+                <div
+                  key={sessionGroup.session_id}
+                  className="border-b border-gray-200 pb-6 last:border-b-0"
+                >
+                  <div className="mb-3">
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      {sessionGroup.session_topic || `Buổi ${sessionGroup.session_number || 'N/A'}`}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {sessionGroup.session_date
+                        ? new Date(sessionGroup.session_date).toLocaleDateString('vi-VN', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })
+                        : 'N/A'}
+                      {sessionGroup.session_room && ` - Phòng: ${sessionGroup.session_room}`}
+                    </p>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-800">{material.name}</p>
-                    <p className="text-sm text-gray-500">{material.size}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {sessionGroup.materials.map(material => (
+                      <div
+                        key={material.material_id}
+                        className="flex items-center justify-between p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition border border-blue-200"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-white text-xl flex-shrink-0">
+                            {getFileIcon(material.file_type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800 truncate" title={material.name}>
+                              {material.name}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              {material.file_type && (
+                                <span className="uppercase">
+                                  {material.file_type.split('/').pop()}
+                                </span>
+                              )}
+                              {material.file_size && (
+                                <>
+                                  <span>•</span>
+                                  <span>{formatFileSize(material.file_size)}</span>
+                                </>
+                              )}
+                              {material.created_at && (
+                                <>
+                                  <span>•</span>
+                                  <span>
+                                    {new Date(material.created_at).toLocaleDateString('vi-VN')}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => window.open(material.file_url, '_blank')}
+                          className="ml-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm flex-shrink-0"
+                        >
+                          Mở
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
-                  Tải Xuống
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1235,6 +1577,257 @@ function StudentClassDetail() {
                   onClick={() => {
                     setShowAttendanceInfoModal(false);
                     setSelectedSession(null);
+                  }}
+                  className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Detail Modal */}
+      {showSessionDetailModal && selectedSessionDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold text-blue-600">Chi Tiết Buổi Học</h3>
+              <button
+                onClick={() => {
+                  setShowSessionDetailModal(false);
+                  setSelectedSessionDetail(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Session Info */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <h4 className="font-semibold text-blue-800 mb-3">Thông tin buổi học</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-600">📅 Ngày:</span>
+                    <p className="font-medium text-gray-800">
+                      {new Date(selectedSessionDetail.date).toLocaleDateString('vi-VN', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">🕐 Thời gian:</span>
+                    <p className="font-medium text-gray-800">
+                      {selectedSessionDetail.start_time}
+                      {selectedSessionDetail.end_time ? ` - ${selectedSessionDetail.end_time}` : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">📍 Phòng:</span>
+                    <p
+                      className={`font-medium ${!selectedSessionDetail.room ? 'text-gray-400 italic' : 'text-gray-800'}`}
+                    >
+                      {selectedSessionDetail.room || 'Chưa có phòng'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">📝 Chủ đề:</span>
+                    <p
+                      className={`font-medium ${!selectedSessionDetail.topic ? 'text-gray-400 italic' : 'text-gray-800'}`}
+                    >
+                      {selectedSessionDetail.topic || 'Chưa có chủ đề'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Status */}
+              {(() => {
+                const now = new Date();
+                const sessionDate = new Date(selectedSessionDetail.date);
+                const [startHour, startMinute] = (selectedSessionDetail.start_time || '00:00')
+                  .split(':')
+                  .map(Number);
+                const sessionStartTime = new Date(sessionDate);
+                sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                let sessionEndTime = null;
+                if (selectedSessionDetail.end_time) {
+                  const [endHour, endMinute] = selectedSessionDetail.end_time
+                    .split(':')
+                    .map(Number);
+                  sessionEndTime = new Date(sessionDate);
+                  sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                } else {
+                  sessionEndTime = new Date(sessionStartTime);
+                  sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                }
+
+                let realTimeStatus = selectedSessionDetail.status;
+                if (selectedSessionDetail.status !== 'CANCELLED') {
+                  if (now < sessionStartTime) {
+                    realTimeStatus = 'UPCOMING';
+                  } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+                    realTimeStatus = 'ONGOING';
+                  } else if (sessionEndTime && now >= sessionEndTime) {
+                    realTimeStatus = 'FINISHED';
+                  }
+                }
+
+                return (
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 className="font-semibold text-gray-800 mb-2">Trạng thái</h4>
+                    <div className="flex items-center gap-2">
+                      {realTimeStatus === 'ONGOING' && (
+                        <span className="px-3 py-1 bg-green-500 text-white text-sm rounded-full font-semibold animate-pulse">
+                          🟢 Đang diễn ra
+                        </span>
+                      )}
+                      {realTimeStatus === 'UPCOMING' && (
+                        <span className="px-3 py-1 bg-blue-500 text-white text-sm rounded-full font-semibold">
+                          📅 Sắp tới
+                        </span>
+                      )}
+                      {realTimeStatus === 'FINISHED' && (
+                        <span className="px-3 py-1 bg-gray-500 text-white text-sm rounded-full font-semibold">
+                          ✅ Đã kết thúc
+                        </span>
+                      )}
+                      {selectedSessionDetail.status === 'CANCELLED' && (
+                        <span className="px-3 py-1 bg-red-500 text-white text-sm rounded-full font-semibold">
+                          ❌ Đã hủy
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Materials */}
+              {(() => {
+                const sessionMaterials = materials.find(
+                  m => m.session_id === selectedSessionDetail.session_id
+                );
+                const materialList = sessionMaterials?.materials || [];
+
+                if (materialList.length > 0) {
+                  return (
+                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                      <h4 className="font-semibold text-purple-800 mb-3">
+                        📚 Tài liệu học tập ({materialList.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {materialList.map((material, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-white p-3 rounded border border-purple-100 flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <span className="text-2xl">{getFileIcon(material.file_type)}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-800 truncate">
+                                  {material.name}
+                                </p>
+                                {material.file_size && (
+                                  <p className="text-xs text-gray-500">
+                                    {formatFileSize(material.file_size)}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => window.open(material.file_url, '_blank')}
+                              className="ml-3 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold text-sm flex-shrink-0"
+                            >
+                              Mở
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Action Buttons */}
+              {(() => {
+                const now = new Date();
+                const sessionDate = new Date(selectedSessionDetail.date);
+                const [startHour, startMinute] = (selectedSessionDetail.start_time || '00:00')
+                  .split(':')
+                  .map(Number);
+                const sessionStartTime = new Date(sessionDate);
+                sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                let sessionEndTime = null;
+                if (selectedSessionDetail.end_time) {
+                  const [endHour, endMinute] = selectedSessionDetail.end_time
+                    .split(':')
+                    .map(Number);
+                  sessionEndTime = new Date(sessionDate);
+                  sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                } else {
+                  sessionEndTime = new Date(sessionStartTime);
+                  sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                }
+
+                let realTimeStatus = selectedSessionDetail.status;
+                if (selectedSessionDetail.status !== 'CANCELLED') {
+                  if (now < sessionStartTime) {
+                    realTimeStatus = 'UPCOMING';
+                  } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+                    realTimeStatus = 'ONGOING';
+                  } else if (sessionEndTime && now >= sessionEndTime) {
+                    realTimeStatus = 'FINISHED';
+                  }
+                }
+
+                if (realTimeStatus === 'ONGOING') {
+                  return (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailModal(false);
+                          handleSessionClick(selectedSessionDetail);
+                        }}
+                        className="flex-1 px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                      >
+                        <FaCamera className="text-xl" />
+                        Điểm Danh
+                      </button>
+                    </div>
+                  );
+                } else if (realTimeStatus === 'FINISHED') {
+                  return (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailModal(false);
+                          handleSessionClick(selectedSessionDetail);
+                        }}
+                        className="flex-1 px-4 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2"
+                      >
+                        <FaCheckCircle className="text-xl" />
+                        Xem Thông Tin Điểm Danh
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowSessionDetailModal(false);
+                    setSelectedSessionDetail(null);
                   }}
                   className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition"
                 >
