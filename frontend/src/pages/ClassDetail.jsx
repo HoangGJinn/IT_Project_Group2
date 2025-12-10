@@ -86,6 +86,15 @@ function ClassDetail() {
   // Force re-render every minute to update session status in real-time
   const [, setRefreshKey] = useState(0);
 
+  // Format file size
+  const formatFileSize = bytes => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       setRefreshKey(prev => prev + 1);
@@ -101,6 +110,7 @@ function ClassDetail() {
   useEffect(() => {
     if (activeTab === 'students') {
       fetchStudents();
+      fetchSessions(); // Also fetch sessions to show next upcoming/ongoing session
     } else if (activeTab === 'upcoming' || activeTab === 'finished') {
       fetchSessions();
     } else if (activeTab === 'report') {
@@ -514,8 +524,30 @@ function ClassDetail() {
         setShowMaterialModal(false);
         setMaterialName('');
         setMaterialUrl('');
+        const sessionId = selectedSessionId;
         setSelectedSessionId(null);
-        fetchSessions();
+
+        // Refresh sessions to get updated materials
+        await fetchSessions();
+
+        // If session detail modal was open, refresh it
+        if (showSessionDetailModal && sessionId) {
+          // Wait a bit for sessions to update
+          setTimeout(() => {
+            const updatedSession = sessions.find(s => s.session_id === sessionId);
+            if (updatedSession) {
+              setSelectedSessionDetail(updatedSession);
+            } else {
+              // If not found, fetch again
+              fetchSessions().then(() => {
+                const updatedSession = sessions.find(s => s.session_id === sessionId);
+                if (updatedSession) {
+                  setSelectedSessionDetail(updatedSession);
+                }
+              });
+            }
+          }, 500);
+        }
       }
     } catch (error) {
       console.error('Upload material error:', error);
@@ -689,6 +721,141 @@ function ClassDetail() {
           {/* Tab Content */}
           {activeTab === 'students' && (
             <div>
+              {/* Next Upcoming Session Info */}
+              {(() => {
+                // Find next session (prioritize ONGOING, then UPCOMING)
+                const now = new Date();
+
+                // Calculate real-time status for each session
+                const sessionsWithStatus = sessions
+                  .filter(session => session.status !== 'CANCELLED')
+                  .map(session => {
+                    const sessionDate = new Date(session.date);
+                    const [startHour, startMinute] = (session.start_time || '00:00')
+                      .split(':')
+                      .map(Number);
+                    const sessionStartTime = new Date(sessionDate);
+                    sessionStartTime.setHours(startHour, startMinute, 0, 0);
+
+                    let sessionEndTime = null;
+                    if (session.end_time) {
+                      const [endHour, endMinute] = session.end_time.split(':').map(Number);
+                      sessionEndTime = new Date(sessionDate);
+                      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+                    } else {
+                      sessionEndTime = new Date(sessionStartTime);
+                      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+                    }
+
+                    let realTimeStatus = session.status;
+                    if (session.status !== 'CANCELLED') {
+                      if (now < sessionStartTime) {
+                        realTimeStatus = 'UPCOMING';
+                      } else if (
+                        now >= sessionStartTime &&
+                        (!sessionEndTime || now < sessionEndTime)
+                      ) {
+                        realTimeStatus = 'ONGOING';
+                      } else if (sessionEndTime && now >= sessionEndTime) {
+                        realTimeStatus = 'FINISHED';
+                      }
+                    }
+
+                    return {
+                      ...session,
+                      realTimeStatus,
+                      sessionStartTime,
+                      sessionEndTime,
+                    };
+                  });
+
+                // Find ONGOING session first
+                const ongoingSession = sessionsWithStatus.find(s => s.realTimeStatus === 'ONGOING');
+
+                // If no ONGOING, find next UPCOMING
+                const nextSession =
+                  ongoingSession ||
+                  sessionsWithStatus
+                    .filter(s => s.realTimeStatus === 'UPCOMING')
+                    .sort((a, b) => {
+                      const dateA = new Date(`${a.date} ${a.start_time || '00:00'}`);
+                      const dateB = new Date(`${b.date} ${b.start_time || '00:00'}`);
+                      return dateA - dateB;
+                    })[0];
+
+                if (nextSession) {
+                  const sessionDate = new Date(nextSession.date);
+                  const dayName = [
+                    'Chủ Nhật',
+                    'Thứ 2',
+                    'Thứ 3',
+                    'Thứ 4',
+                    'Thứ 5',
+                    'Thứ 6',
+                    'Thứ 7',
+                  ][sessionDate.getDay()];
+                  const isOngoing = nextSession.realTimeStatus === 'ONGOING';
+
+                  return (
+                    <div
+                      className={`mb-6 p-4 rounded-lg border shadow-sm ${isOngoing ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h3
+                            className={`text-lg font-semibold mb-2 ${isOngoing ? 'text-green-800' : 'text-blue-800'}`}
+                          >
+                            {isOngoing
+                              ? '🟢 Buổi học đang diễn ra'
+                              : '📅 Buổi học sắp tới gần nhất'}
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <span className="text-gray-600">Ngày:</span>
+                              <p className="font-medium text-gray-800">
+                                {dayName},{' '}
+                                {sessionDate.toLocaleDateString('vi-VN', {
+                                  day: 'numeric',
+                                  month: 'long',
+                                  year: 'numeric',
+                                })}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Thời gian:</span>
+                              <p className="font-medium text-gray-800">
+                                {nextSession.start_time}
+                                {nextSession.end_time ? ` - ${nextSession.end_time}` : ''}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Phòng:</span>
+                              <p className="font-medium text-gray-800">
+                                {nextSession.room || 'Chưa có'}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Chủ đề:</span>
+                              <p className="font-medium text-gray-800">
+                                {nextSession.topic || 'Chưa có'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleViewSessionDetail(nextSession)}
+                          className="ml-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm whitespace-nowrap"
+                        >
+                          Xem chi tiết
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+
               {/* Search and Sort Bar */}
               <div className="mb-4 flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="flex-1 max-w-md">
@@ -1103,12 +1270,14 @@ function ClassDetail() {
                                           })}
                                         </p>
                                         <div className="space-y-1.5 text-sm text-gray-700">
-                                          {session.room && (
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-gray-400">📍</span>
-                                              <span className="font-medium">{session.room}</span>
-                                            </div>
-                                          )}
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-gray-400">📍</span>
+                                            <span
+                                              className={`font-medium ${!session.room ? 'text-gray-400 italic' : ''}`}
+                                            >
+                                              {session.room || 'Chưa có phòng'}
+                                            </span>
+                                          </div>
                                           <div className="flex items-center gap-2">
                                             <span className="text-gray-400">🕐</span>
                                             <span className="font-semibold text-blue-600">
@@ -1116,14 +1285,14 @@ function ClassDetail() {
                                               {session.end_time ? ` - ${session.end_time}` : ''}
                                             </span>
                                           </div>
-                                          {session.topic && (
-                                            <div className="flex items-start gap-2">
-                                              <span className="text-gray-400 mt-0.5">📝</span>
-                                              <span className="font-medium line-clamp-2">
-                                                {session.topic}
-                                              </span>
-                                            </div>
-                                          )}
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-gray-400 mt-0.5">📝</span>
+                                            <span
+                                              className={`font-medium line-clamp-2 ${!session.topic ? 'text-gray-400 italic' : ''}`}
+                                            >
+                                              {session.topic || 'Chưa có chủ đề'}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -1378,12 +1547,14 @@ function ClassDetail() {
                                           })}
                                         </p>
                                         <div className="space-y-1.5 text-sm text-gray-700">
-                                          {session.room && (
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-gray-400">📍</span>
-                                              <span className="font-medium">{session.room}</span>
-                                            </div>
-                                          )}
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-gray-400">📍</span>
+                                            <span
+                                              className={`font-medium ${!session.room ? 'text-gray-400 italic' : ''}`}
+                                            >
+                                              {session.room || 'Chưa có phòng'}
+                                            </span>
+                                          </div>
                                           <div className="flex items-center gap-2">
                                             <span className="text-gray-400">🕐</span>
                                             <span className="font-semibold text-gray-800">
@@ -1391,14 +1562,14 @@ function ClassDetail() {
                                               {session.end_time ? ` - ${session.end_time}` : ''}
                                             </span>
                                           </div>
-                                          {session.topic && (
-                                            <div className="flex items-start gap-2">
-                                              <span className="text-gray-400 mt-0.5">📝</span>
-                                              <span className="font-medium line-clamp-2">
-                                                {session.topic}
-                                              </span>
-                                            </div>
-                                          )}
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-gray-400 mt-0.5">📝</span>
+                                            <span
+                                              className={`font-medium line-clamp-2 ${!session.topic ? 'text-gray-400 italic' : ''}`}
+                                            >
+                                              {session.topic || 'Chưa có chủ đề'}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -1419,6 +1590,9 @@ function ClassDetail() {
                                               token: session.qrToken,
                                               url: qrURL,
                                               expiresAt: session.qrExpiresAt,
+                                              locationRadius: session.locationRadius || 15,
+                                              teacherLatitude: session.teacherLatitude,
+                                              teacherLongitude: session.teacherLongitude,
                                               sessionInfo: {
                                                 date: session.date,
                                                 time: `${session.start_time}${session.end_time ? ` - ${session.end_time}` : ''}`,
@@ -1451,26 +1625,84 @@ function ClassDetail() {
                                     </div>
 
                                     {/* Materials */}
-                                    {session.materials && session.materials.length > 0 && (
-                                      <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-gray-700">
+                                          Tài liệu học tập:
+                                        </span>
+                                        <button
+                                          onClick={() => {
+                                            setSelectedSessionId(session.session_id);
+                                            setShowMaterialModal(true);
+                                          }}
+                                          className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
+                                        >
+                                          + Thêm tài liệu
+                                        </button>
+                                      </div>
+                                      {session.materials && session.materials.length > 0 ? (
                                         <div className="flex flex-wrap gap-2">
                                           {session.materials.map(material => (
                                             <div
                                               key={material.material_id}
-                                              className="bg-blue-50 rounded-lg px-3 py-2 cursor-pointer hover:bg-blue-100 border border-blue-200 transition"
-                                              onClick={() =>
-                                                window.open(material.file_url, '_blank')
-                                              }
-                                              title={material.name}
+                                              className="group relative bg-blue-50 rounded-lg px-3 py-2 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-2"
                                             >
-                                              <span className="text-xs font-medium text-blue-700">
+                                              <span
+                                                className="text-xs font-medium text-blue-700 cursor-pointer flex-1"
+                                                onClick={() =>
+                                                  window.open(material.file_url, '_blank')
+                                                }
+                                                title={material.name}
+                                              >
                                                 📄 {material.name}
+                                                {material.file_size && (
+                                                  <span className="text-gray-500 ml-1">
+                                                    ({formatFileSize(material.file_size)})
+                                                  </span>
+                                                )}
                                               </span>
+                                              <button
+                                                onClick={async e => {
+                                                  e.stopPropagation();
+                                                  if (
+                                                    window.confirm(
+                                                      `Bạn có chắc chắn muốn xóa tài liệu "${material.name}"?`
+                                                    )
+                                                  ) {
+                                                    try {
+                                                      const response = await api.delete(
+                                                        `/materials/${material.material_id}`
+                                                      );
+                                                      if (response.data.success) {
+                                                        alert('Xóa tài liệu thành công!');
+                                                        fetchSessions();
+                                                      }
+                                                    } catch (error) {
+                                                      console.error(
+                                                        'Delete material error:',
+                                                        error
+                                                      );
+                                                      alert(
+                                                        error.response?.data?.message ||
+                                                          'Xóa tài liệu thất bại'
+                                                      );
+                                                    }
+                                                  }
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-800 text-xs px-1 transition"
+                                                title="Xóa tài liệu"
+                                              >
+                                                ✕
+                                              </button>
                                             </div>
                                           ))}
                                         </div>
-                                      </div>
-                                    )}
+                                      ) : (
+                                        <p className="text-xs text-gray-500 italic">
+                                          Chưa có tài liệu nào
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -2807,13 +3039,26 @@ function ClassDetail() {
 
           {/* Upload Material Modal */}
           {showMaterialModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
               <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                <h3 className="text-xl font-semibold mb-4">Thêm Tài Liệu</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-semibold">Thêm Tài Liệu</h3>
+                  <button
+                    onClick={() => {
+                      setShowMaterialModal(false);
+                      setMaterialName('');
+                      setMaterialUrl('');
+                      setSelectedSessionId(null);
+                    }}
+                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                  >
+                    ×
+                  </button>
+                </div>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tên Tài Liệu
+                      Tên Tài Liệu <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -2825,21 +3070,28 @@ function ClassDetail() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      URL Tài Liệu
+                      URL Tài Liệu <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={materialUrl}
                       onChange={e => setMaterialUrl(e.target.value)}
-                      placeholder="Nhập URL của tài liệu (ví dụ: https://example.com/file.pdf)"
+                      placeholder="https://example.com/file.pdf hoặc https://drive.google.com/..."
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p className="mt-1 text-xs text-gray-500">
-                      Bạn có thể upload file lên Google Drive, OneDrive hoặc dịch vụ lưu trữ khác và
-                      dán link vào đây
+                      💡 Bạn có thể upload file lên Google Drive, OneDrive hoặc dịch vụ lưu trữ khác
+                      và dán link vào đây. Đảm bảo link có quyền truy cập công khai hoặc có quyền
+                      xem.
                     </p>
                   </div>
-                  <div className="flex gap-4 justify-end">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-xs text-blue-800">
+                      <strong>Lưu ý:</strong> Hệ thống sẽ tự động nhận diện loại file từ URL. Nếu
+                      file không mở được, vui lòng kiểm tra lại quyền truy cập của link.
+                    </p>
+                  </div>
+                  <div className="flex gap-4 justify-end pt-2">
                     <button
                       onClick={() => {
                         setShowMaterialModal(false);
@@ -2853,7 +3105,12 @@ function ClassDetail() {
                     </button>
                     <button
                       onClick={handleUploadMaterial}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                      disabled={!materialName.trim() || !materialUrl.trim()}
+                      className={`px-4 py-2 rounded-lg transition ${
+                        !materialName.trim() || !materialUrl.trim()
+                          ? 'bg-gray-400 cursor-not-allowed text-white'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
                       Tải Lên
                     </button>
@@ -3054,6 +3311,101 @@ function ClassDetail() {
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* Materials Section */}
+                    <div className="mb-6 border-t border-gray-200 pt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-lg font-semibold text-gray-800">📚 Tài Liệu Học Tập</h4>
+                        <button
+                          onClick={() => {
+                            setSelectedSessionId(selectedSessionDetail.session_id);
+                            setShowMaterialModal(true);
+                            // Don't close session detail modal, just open material modal on top
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
+                        >
+                          + Thêm Tài Liệu
+                        </button>
+                      </div>
+                      {selectedSessionDetail.materials &&
+                      selectedSessionDetail.materials.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedSessionDetail.materials.map(material => (
+                            <div
+                              key={material.material_id}
+                              className="group flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition"
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <span className="text-xl">📄</span>
+                                <div className="flex-1 min-w-0">
+                                  <p
+                                    className="font-medium text-gray-800 truncate"
+                                    title={material.name}
+                                  >
+                                    {material.name}
+                                  </p>
+                                  {material.file_size && (
+                                    <p className="text-xs text-gray-500">
+                                      {formatFileSize(material.file_size)}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => window.open(material.file_url, '_blank')}
+                                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition"
+                                >
+                                  Mở
+                                </button>
+                                <button
+                                  onClick={async e => {
+                                    e.stopPropagation();
+                                    if (
+                                      window.confirm(
+                                        `Bạn có chắc chắn muốn xóa tài liệu "${material.name}"?`
+                                      )
+                                    ) {
+                                      try {
+                                        const response = await api.delete(
+                                          `/materials/${material.material_id}`
+                                        );
+                                        if (response.data.success) {
+                                          alert('Xóa tài liệu thành công!');
+                                          fetchSessions();
+                                          // Update selectedSessionDetail to refresh materials
+                                          const updatedSession = sessions.find(
+                                            s => s.session_id === selectedSessionDetail.session_id
+                                          );
+                                          if (updatedSession) {
+                                            setSelectedSessionDetail(updatedSession);
+                                          }
+                                        }
+                                      } catch (error) {
+                                        console.error('Delete material error:', error);
+                                        alert(
+                                          error.response?.data?.message || 'Xóa tài liệu thất bại'
+                                        );
+                                      }
+                                    }
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-800 text-sm px-2 transition"
+                                  title="Xóa tài liệu"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 bg-gray-50 rounded-lg">
+                          <p className="text-sm text-gray-500">
+                            Chưa có tài liệu nào cho buổi học này
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Action Buttons */}
