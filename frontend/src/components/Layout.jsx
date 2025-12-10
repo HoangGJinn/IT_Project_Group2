@@ -63,6 +63,29 @@ function Layout() {
               >
                 Lịch Dạy
               </Link>
+
+              <Link
+                to="/admin/students"
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  isActive('/admin/students')
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-blue-500 hover:bg-blue-50'
+                }`}
+              >
+                Quản Lý Sinh Viên
+              </Link>
+
+              <Link
+                to="/admin/teachers"
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  isActive('/admin/teachers')
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-blue-500 hover:bg-blue-50'
+                }`}
+              >
+                Quản Lý Giáo Viên
+              </Link>
+
               <Link
                 to="/report"
                 className={`px-4 py-2 rounded-lg font-medium transition ${
