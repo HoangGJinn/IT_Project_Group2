@@ -1,4 +1,4 @@
-const { User, Student, Teacher } = require('../models');
+const { User, Student, Role, Teacher } = require('../models');
 const { hashPassword, comparePassword } = require('../utils/password');
 
 const getProfile = async (req, res) => {
@@ -94,12 +94,12 @@ const changePassword = async (req, res) => {
 
 const createStudentUser = async (req, res) => {
   try {
-    console.log(' BODY RECEIVED:', req.body); // ← thêm dòng này
+    // console.log(' BODY RECEIVED:', req.body);
 
     const { full_name, email, phone, password, student_code, class_cohort } = req.body;
 
     if (!full_name || !email || !password || !student_code) {
-      console.log(' Missing:', { full_name, email, password, student_code });
+      // console.log(' Missing:', { full_name, email, password, student_code });
 
       return res.status(400).json({
         success: false,
@@ -122,11 +122,16 @@ const createStudentUser = async (req, res) => {
       password_hash: await hashPassword(password),
     });
 
-    const newStudent = await Student.create({
-      user_id: newUser.user_id,
-      student_code,
-      class_cohort,
-    });
+    const studentRole = await Role.findOne({ where: { code: 'STUDENT' } });
+    let newStudent;
+    if (studentRole) {
+      await newUser.addRole(studentRole);
+      newStudent = await Student.create({
+        user_id: newUser.user_id,
+        student_code,
+        class_cohort,
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -164,10 +169,10 @@ const updateUserByAdmin = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error(' BACKEND ERROR — updateProfile');
-    console.error(' BODY RECEIVED:', req.body);
-    console.error(' ERROR MESSAGE:', error.message);
-    console.error(' FULL ERROR:', error);
+    // console.error(' BACKEND ERROR — updateProfile');
+    // console.error(' BODY RECEIVED:', req.body);
+    // console.error(' ERROR MESSAGE:', error.message);
+    // console.error(' FULL ERROR:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -176,7 +181,7 @@ const deleteStudentUser = async (req, res) => {
   try {
     const user_id = req.params.id;
 
-    console.log('DELETE user_id =', user_id);
+    // console.log('DELETE user_id =', user_id);
 
     if (!user_id) {
       return res.status(400).json({ success: false, message: 'Missing user_id' });
@@ -205,7 +210,7 @@ const deleteTeacherUser = async (req, res) => {
   try {
     const user_id = req.params.id;
 
-    console.log('DELETE user_id =', user_id);
+    // console.log('DELETE user_id =', user_id);
 
     if (!user_id) {
       return res.status(400).json({ success: false, message: 'Missing user_id' });
@@ -232,12 +237,12 @@ const deleteTeacherUser = async (req, res) => {
 
 const createTeachertUser = async (req, res) => {
   try {
-    console.log(' BODY RECEIVED:', req.body); // ← thêm dòng này
+    // console.log(' BODY RECEIVED:', req.body);
 
     const { full_name, email, phone, password, teacher_code, academic_title } = req.body;
 
     if (!full_name || !email || !password || !teacher_code) {
-      console.log(' Missing:', { full_name, email, password, teacher_code });
+      // console.log(' Missing:', { full_name, email, password, teacher_code });
 
       return res.status(400).json({
         success: false,
@@ -260,11 +265,16 @@ const createTeachertUser = async (req, res) => {
       password_hash: await hashPassword(password),
     });
 
-    const newTeacher = await Teacher.create({
-      user_id: newUser.user_id,
-      teacher_code,
-      academic_title,
-    });
+    const teacherRole = await Role.findOne({ where: { code: 'TEACHER' } });
+    let newTeacher;
+    if (teacherRole) {
+      await newUser.addRole(teacherRole);
+      newTeacher = await Teacher.create({
+        user_id: newUser.user_id,
+        teacher_code,
+        academic_title,
+      });
+    }
 
     return res.status(201).json({
       success: true,
