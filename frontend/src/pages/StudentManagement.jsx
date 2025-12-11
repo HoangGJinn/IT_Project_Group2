@@ -42,8 +42,14 @@ export default function StudentManagement() {
       .get('/api/admin/students', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      .then(res => setStudents(res.data))
-      .catch(err => console.error('GET /api/students error:', err));
+      .then(res => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setStudents(list);
+      })
+      .catch(err => {
+        console.error('GET /api/students error:', err);
+        setStudents([]);
+      });
   };
 
   useEffect(() => {
@@ -51,11 +57,12 @@ export default function StudentManagement() {
   }, []);
 
   // Filter
-  const filtered = students.filter(
-    s =>
-      s.student_code.toLowerCase().includes(search.toLowerCase()) ||
-      s.class_cohort?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = (Array.isArray(students) ? students : []).filter(s => {
+    const code = (s.student_code || '').toLowerCase();
+    const cohort = (s.class_cohort || '').toLowerCase();
+    const term = search.toLowerCase();
+    return code.includes(term) || cohort.includes(term);
+  });
 
   // Xóa sinh viên
   const deleteStudent = async student => {

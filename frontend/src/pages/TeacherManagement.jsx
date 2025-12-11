@@ -41,19 +41,26 @@ export default function TeacherManagement() {
       .get('/api/teachers', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      .then(res => setTeachers(res.data))
-      .catch(err => console.error('GET /api/teachers error:', err));
+      .then(res => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setTeachers(list);
+      })
+      .catch(err => {
+        console.error('GET /api/teachers error:', err);
+        setTeachers([]);
+      });
   };
 
   useEffect(() => {
     fetchTeachers();
   }, []);
 
-  const filtered = teachers.filter(
-    t =>
-      t.teacher_code?.toLowerCase().includes(search.toLowerCase()) ||
-      t.academic_title?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = (Array.isArray(teachers) ? teachers : []).filter(t => {
+    const code = (t.teacher_code || '').toLowerCase();
+    const title = (t.academic_title || '').toLowerCase();
+    const term = search.toLowerCase();
+    return code.includes(term) || title.includes(term);
+  });
 
   // Xóa giáo viên
   const deleteTeacher = async teacher => {
