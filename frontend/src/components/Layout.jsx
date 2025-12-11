@@ -35,6 +35,10 @@ function Layout() {
     return location.pathname === path;
   };
 
+  // Check user roles
+  const isAdmin = user?.roles?.includes('ADMIN');
+  const isTeacher = user?.roles?.includes('TEACHER') && !isAdmin;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -53,38 +57,47 @@ function Layout() {
               >
                 Quản Lý Lớp Học
               </Link>
-              <Link
-                to="/schedule"
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  isActive('/schedule')
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-blue-500 hover:bg-blue-50'
-                }`}
-              >
-                Lịch Dạy
-              </Link>
 
-              <Link
-                to="/admin/students"
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  isActive('/admin/students')
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-blue-500 hover:bg-blue-50'
-                }`}
-              >
-                Quản Lý Sinh Viên
-              </Link>
+              {/* Hide "Lịch Dạy" for Admin */}
+              {!isAdmin && (
+                <Link
+                  to="/schedule"
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    isActive('/schedule')
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Lịch Dạy
+                </Link>
+              )}
 
-              <Link
-                to="/admin/teachers"
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  isActive('/admin/teachers')
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-blue-500 hover:bg-blue-50'
-                }`}
-              >
-                Quản Lý Giáo Viên
-              </Link>
+              {/* Hide "Quản Lý Sinh Viên" and "Quản Lý Giáo Viên" for Teacher */}
+              {!isTeacher && (
+                <>
+                  <Link
+                    to="/admin/students"
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      isActive('/admin/students')
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-blue-500 hover:bg-blue-50'
+                    }`}
+                  >
+                    Quản Lý Sinh Viên
+                  </Link>
+
+                  <Link
+                    to="/admin/teachers"
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      isActive('/admin/teachers')
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-blue-500 hover:bg-blue-50'
+                    }`}
+                  >
+                    Quản Lý Giáo Viên
+                  </Link>
+                </>
+              )}
 
               <Link
                 to="/report"

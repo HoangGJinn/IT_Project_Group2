@@ -136,6 +136,120 @@ export const getLocationWithFallback = async (options = {}) => {
 };
 
 /**
+ * Calculate great-circle distance (meters) using haversine
+ */
+const toRadians = degrees => (degrees * Math.PI) / 180;
+
+export const haversineDistanceMeters = (a, b) => {
+  const R = 6371000; // Earth radius in meters
+  const dLat = toRadians(b.latitude - a.latitude);
+  const dLon = toRadians(b.longitude - a.longitude);
+  const lat1 = toRadians(a.latitude);
+  const lat2 = toRadians(b.latitude);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+  return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
+const median = values => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+const removeOutliers = (samples, thresholdMeters) => {
+  if (!samples.length) return [];
+  const latMed = median(samples.map(s => s.latitude));
+  const lonMed = median(samples.map(s => s.longitude));
+  const center = { latitude: latMed, longitude: lonMed };
+
+  return samples.filter(sample => {
+    const dist = haversineDistanceMeters(center, sample);
+    return dist <= thresholdMeters;
+  });
+};
+
+/**
+ * Sample multiple GPS fixes, filter outliers, and return a stable point.
+ * Options:
+ *  - samples: number of desired samples (default 5)
+ *  - intervalMs: delay between samples
+ *  - maxDurationMs: hard timeout for sampling
+ *  - outlierThreshold: meters to drop outliers vs median
+ */
+export const getFilteredLocation = async ({
+  samples = 5,
+  intervalMs = 1500,
+  maxDurationMs = 10000,
+  outlierThreshold = 50,
+} = {}) => {
+  if (!navigator.geolocation) {
+    throw new Error('Trình duyệt không hỗ trợ định vị GPS');
+  }
+
+  const rawSamples = [];
+  const start = Date.now();
+
+  const getFix = () =>
+    new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now(),
+          });
+        },
+        err => reject(err),
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    });
+
+  while (rawSamples.length < samples && Date.now() - start < maxDurationMs) {
+    const fix = await getFix();
+    rawSamples.push(fix);
+    if (rawSamples.length < samples) {
+      await new Promise(res => setTimeout(res, intervalMs));
+    }
+  }
+
+  if (!rawSamples.length) {
+    throw new Error('Không thể lấy vị trí GPS');
+  }
+
+  const filtered = removeOutliers(rawSamples, outlierThreshold);
+  const usableSamples = filtered.length ? filtered : rawSamples;
+  const latMed = median(usableSamples.map(s => s.latitude));
+  const lonMed = median(usableSamples.map(s => s.longitude));
+
+  const bestSample = usableSamples.reduce((best, curr) =>
+    curr.accuracy < best.accuracy ? curr : best
+  );
+
+  // Estimated accuracy: take min accuracy among usable samples
+  const estimatedAccuracy = bestSample.accuracy;
+
+  return {
+    latitude: latMed,
+    longitude: lonMed,
+    accuracy: estimatedAccuracy,
+    source: 'GPS',
+    samples: rawSamples,
+    filteredSamples: usableSamples,
+    bestSample,
+  };
+};
+
+/**
  * Validate coordinates
  */
 export const validateCoordinates = (latitude, longitude) => {
