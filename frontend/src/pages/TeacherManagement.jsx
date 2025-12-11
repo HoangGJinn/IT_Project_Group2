@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { FiSearch, FiTrash2 } from 'react-icons/fi';
+import api from '../utils/api';
 
 export default function TeacherManagement() {
   const [teachers, setTeachers] = useState([]);
@@ -35,12 +34,8 @@ export default function TeacherManagement() {
 
   // Load danh sách giáo viên
   const fetchTeachers = () => {
-    const token = localStorage.getItem('token');
-
-    axios
-      .get('/api/teachers', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    api
+      .get('/teachers')
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : [];
         setTeachers(list);
@@ -62,25 +57,6 @@ export default function TeacherManagement() {
     return code.includes(term) || title.includes(term);
   });
 
-  // Xóa giáo viên
-  const deleteTeacher = async teacher => {
-    if (!window.confirm('Bạn có chắc muốn xoá giáo viên này?')) return;
-    try {
-      const token = localStorage.getItem('token');
-
-      await axios.delete(`/api/users/${teacher.user_id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      alert('Xoá giáo viên thành công!');
-
-      setTeachers(prev => prev.filter(x => x.teacher_id !== teacher.teacher_id));
-    } catch (error) {
-      console.error('🔥 DELETE ERROR:', error.response?.data || error);
-      alert(error.response?.data?.message || 'Không thể xoá giáo viên!');
-    }
-  };
-
   // Input handler
   const handleInput = e => {
     setNewTeacher({ ...newTeacher, [e.target.name]: e.target.value });
@@ -89,20 +65,14 @@ export default function TeacherManagement() {
   // Thêm giáo viên
   const handleAddTeacher = async () => {
     try {
-      const token = localStorage.getItem('token');
-
-      await axios.post(
-        '/api/users/create-full-teacher',
-        {
-          full_name: newTeacher.full_name,
-          email: newTeacher.email,
-          phone: newTeacher.phone,
-          password: newTeacher.password || '123456',
-          teacher_code: newTeacher.teacher_code,
-          academic_title: newTeacher.academic_title,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/users/create-full-teacher', {
+        full_name: newTeacher.full_name,
+        email: newTeacher.email,
+        phone: newTeacher.phone,
+        password: newTeacher.password || '123456',
+        teacher_code: newTeacher.teacher_code,
+        academic_title: newTeacher.academic_title,
+      });
 
       alert('Thêm giảng viên thành công!');
       setShowAddModal(false);
@@ -118,7 +88,6 @@ export default function TeacherManagement() {
 
       fetchTeachers();
     } catch (error) {
-      console.log('❌ ERROR:', error.response?.data);
       alert(
         error.response?.data?.message || error.response?.data?.error || 'Không thể thêm giảng viên!'
       );
@@ -127,11 +96,7 @@ export default function TeacherManagement() {
 
   // Mở modal sửa
   const openEditModal = async teacher => {
-    const token = localStorage.getItem('token');
-
-    const userRes = await axios.get(`/api/users/${teacher.user_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const userRes = await api.get(`/users/${teacher.user_id}`);
 
     const user = userRes.data;
 
@@ -151,29 +116,19 @@ export default function TeacherManagement() {
   // Lưu chỉnh sửa
   const handleUpdateTeacher = async () => {
     try {
-      const token = localStorage.getItem('token');
-
       // Update User
-      await axios.put(
-        `/api/users/${editTeacher.user_id}`,
-        {
-          full_name: editTeacher.full_name,
-          email: editTeacher.email,
-          phone: editTeacher.phone,
-          status: editTeacher.status,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/users/${editTeacher.user_id}`, {
+        full_name: editTeacher.full_name,
+        email: editTeacher.email,
+        phone: editTeacher.phone,
+        status: editTeacher.status,
+      });
 
       // Update Teacher
-      await axios.put(
-        `/api/teachers/${editTeacher.user_id}`,
-        {
-          teacher_code: editTeacher.teacher_code,
-          academic_title: editTeacher.academic_title,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/teachers/${editTeacher.user_id}`, {
+        teacher_code: editTeacher.teacher_code,
+        academic_title: editTeacher.academic_title,
+      });
 
       alert('Cập nhật thành công!');
       setShowEditModal(false);
@@ -186,11 +141,7 @@ export default function TeacherManagement() {
 
   // Mở modal chi tiết
   const openDetails = async teacher => {
-    const token = localStorage.getItem('token');
-
-    const res = await axios.get(`/api/teachers/detail/${teacher.teacher_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await api.get(`/teachers/detail/${teacher.teacher_id}`);
 
     setTeacherDetail(res.data);
     setShowDetailModal(true);
@@ -200,13 +151,7 @@ export default function TeacherManagement() {
     if (!window.confirm('Đặt lại mật khẩu giáo viên này về 123456?')) return;
 
     try {
-      const token = localStorage.getItem('token');
-
-      await axios.put(
-        `/api/users/${teacher.user_id}/reset-password`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/users/${teacher.user_id}/reset-password`);
 
       alert('Đã đặt lại mật khẩu về 123456!');
     } catch (error) {
@@ -222,7 +167,6 @@ export default function TeacherManagement() {
       {/* Search */}
       <div className="flex items-center gap-4 mb-6">
         <div className="flex items-center bg-white px-4 py-2 rounded-lg border w-72 shadow-sm">
-          <FiSearch className="text-gray-400 mr-2" />
           <input
             className="outline-none flex-1"
             placeholder="Tìm kiếm giáo viên..."

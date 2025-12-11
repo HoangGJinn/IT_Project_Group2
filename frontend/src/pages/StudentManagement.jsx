@@ -1,7 +1,7 @@
 //Diễm Ngọc------------------------------------------------------
 import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { FiSearch, FiTrash2 } from 'react-icons/fi';
+import api from '../utils/api';
+import { FiSearch } from 'react-icons/fi';
 
 export default function StudentManagement() {
   const [students, setStudents] = useState([]);
@@ -36,12 +36,8 @@ export default function StudentManagement() {
 
   // Load danh sách sinh viên
   const fetchStudents = () => {
-    const token = localStorage.getItem('token');
-
-    axios
-      .get('/api/admin/students', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    api
+      .get('/admin/students')
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : [];
         setStudents(list);
@@ -64,28 +60,6 @@ export default function StudentManagement() {
     return code.includes(term) || cohort.includes(term);
   });
 
-  // Xóa sinh viên
-  const deleteStudent = async student => {
-    if (!window.confirm('Bạn có chắc muốn xoá sinh viên này?')) return;
-
-    try {
-      const token = localStorage.getItem('token');
-
-      // Gọi API xoá USER (trong controller sẽ xoá kèm STUDENT)
-      await axios.delete(`/api/users/${student.user_id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      alert('Xoá sinh viên thành công!');
-
-      // Cập nhật lại state
-      setStudents(prev => prev.filter(x => x.student_id !== student.student_id));
-    } catch (error) {
-      console.error('🔥 DELETE ERROR:', error.response?.data || error);
-      alert(error.response?.data?.message || 'Không thể xoá sinh viên!');
-    }
-  };
-
   // Input handler
   const handleInput = e => {
     setNewStudent({ ...newStudent, [e.target.name]: e.target.value });
@@ -95,21 +69,14 @@ export default function StudentManagement() {
   // Thêm sinh viên
   const handleAddStudent = async () => {
     try {
-      const token = localStorage.getItem('token');
-
-      // gửi đúng fields theo yêu cầu backend
-      const res = await axios.post(
-        '/api/users/create-full',
-        {
-          full_name: newStudent.full_name,
-          email: newStudent.email,
-          phone: newStudent.phone,
-          password: newStudent.password || '123456',
-          student_code: newStudent.student_code,
-          class_cohort: newStudent.class_cohort,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/users/create-full', {
+        full_name: newStudent.full_name,
+        email: newStudent.email,
+        phone: newStudent.phone,
+        password: newStudent.password || '123456',
+        student_code: newStudent.student_code,
+        class_cohort: newStudent.class_cohort,
+      });
 
       alert('Thêm sinh viên thành công!');
       setShowAddModal(false);
@@ -126,7 +93,6 @@ export default function StudentManagement() {
 
       fetchStudents();
     } catch (error) {
-      console.log('❌ ERROR:', error.response?.data);
       const msg =
         error.response?.data?.message || error.response?.data?.error || 'Không thể thêm sinh viên!';
       alert(msg);
@@ -135,11 +101,7 @@ export default function StudentManagement() {
 
   // Mở modal sửa
   const openEditModal = async student => {
-    const token = localStorage.getItem('token');
-
-    const userRes = await axios.get(`/api/users/${student.user_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const userRes = await api.get(`/users/${student.user_id}`);
 
     const user = userRes.data;
 
@@ -159,30 +121,19 @@ export default function StudentManagement() {
   // Lưu chỉnh sửa
   const handleUpdateStudent = async () => {
     try {
-      const token = localStorage.getItem('token');
-
       // 1️⃣ Update USER
-      await axios.put(
-        `/api/users/${editStudent.user_id}`,
-        {
-          full_name: editStudent.full_name,
-          email: editStudent.email,
-          phone: editStudent.phone,
-          status: editStudent.status,
-        },
-
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/users/${editStudent.user_id}`, {
+        full_name: editStudent.full_name,
+        email: editStudent.email,
+        phone: editStudent.phone,
+        status: editStudent.status,
+      });
 
       // 2️⃣ Update STUDENT
-      await axios.put(
-        `/api/admin/students/${editStudent.user_id}`,
-        {
-          student_code: editStudent.student_code,
-          class_cohort: editStudent.class_cohort,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/admin/students/${editStudent.user_id}`, {
+        student_code: editStudent.student_code,
+        class_cohort: editStudent.class_cohort,
+      });
 
       alert('Cập nhật thành công!');
       setShowEditModal(false);
@@ -194,11 +145,7 @@ export default function StudentManagement() {
   };
   // Mở modal chi tiết
   const openDetails = async student => {
-    const token = localStorage.getItem('token');
-
-    const res = await axios.get(`/api/admin/students/detail/${student.student_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await api.get(`/admin/students/detail/${student.student_id}`);
 
     setStudentDetail(res.data);
     setShowDetailModal(true);
@@ -208,13 +155,7 @@ export default function StudentManagement() {
     if (!window.confirm('Đặt lại mật khẩu sinh viên này về 123456?')) return;
 
     try {
-      const token = localStorage.getItem('token');
-
-      await axios.put(
-        `/api/users/${student.user_id}/reset-password`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.put(`/users/${student.user_id}/reset-password`);
 
       alert('Đã đặt lại mật khẩu về 123456!');
     } catch (error) {
