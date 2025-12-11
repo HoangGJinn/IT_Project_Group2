@@ -10,23 +10,25 @@ const login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Email and password are required',
       });
     }
 
     const user = await User.findOne({
       where: { email },
-      include: [{
-        model: Role,
-        as: 'roles',
-        through: { attributes: [] }
-      }]
+      include: [
+        {
+          model: Role,
+          as: 'roles',
+          through: { attributes: [] },
+        },
+      ],
     });
 
     if (!user || !user.password_hash) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid credentials',
       });
     }
 
@@ -34,14 +36,14 @@ const login = async (req, res) => {
     if (!isValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid credentials',
       });
     }
 
     if (user.status !== 'ACTIVE') {
       return res.status(403).json({
         success: false,
-        message: 'Account is not active'
+        message: 'Account is not active',
       });
     }
 
@@ -54,14 +56,14 @@ const login = async (req, res) => {
         user_id: user.user_id,
         email: user.email,
         full_name: user.full_name,
-        roles: user.roles.map(r => r.code)
-      }
+        roles: user.roles.map(r => r.code),
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -73,7 +75,7 @@ const register = async (req, res) => {
     if (!email || !password || !full_name) {
       return res.status(400).json({
         success: false,
-        message: 'Email, password and full_name are required'
+        message: 'Email, password and full_name are required',
       });
     }
 
@@ -81,7 +83,7 @@ const register = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Email already exists'
+        message: 'Email already exists',
       });
     }
 
@@ -91,7 +93,7 @@ const register = async (req, res) => {
       password_hash,
       full_name,
       phone,
-      status: 'ACTIVE'
+      status: 'ACTIVE',
     });
 
     // Assign STUDENT role by default
@@ -100,20 +102,20 @@ const register = async (req, res) => {
       await user.addRole(studentRole);
       await Student.create({
         user_id: user.user_id,
-        student_code: `STU${user.user_id}`
+        student_code: `STU${user.user_id}`,
       });
     }
 
     res.status(201).json({
       success: true,
       message: 'Registration successful',
-      user_id: user.user_id
+      user_id: user.user_id,
     });
   } catch (error) {
     console.error('Register error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
     });
   }
 };
@@ -125,7 +127,7 @@ const googleLogin = async (req, res) => {
     if (!id_token) {
       return res.status(400).json({
         success: false,
-        message: 'Google ID token is required'
+        message: 'Google ID token is required',
       });
     }
 
@@ -135,84 +137,101 @@ const googleLogin = async (req, res) => {
     if (!googleUser.email) {
       return res.status(400).json({
         success: false,
-        message: 'Email not provided by Google'
+        message: 'Email not provided by Google',
       });
     }
 
-    // Check if user exists with this email
-    let user = await User.findOne({
-      where: { email: googleUser.email },
-      include: [{
-        model: Role,
-        as: 'roles',
-        through: { attributes: [] }
-      }]
+    // 1) Nếu provider_uid đã tồn tại, lấy user từ đó để tránh lỗi unique
+    const existingProvider = await AuthProvider.findOne({
+      where: {
+        provider: 'GOOGLE',
+        provider_uid: googleUser.googleId,
+      },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          include: [
+            {
+              model: Role,
+              as: 'roles',
+              through: { attributes: [] },
+            },
+          ],
+        },
+      ],
     });
 
-    // Check if Google auth provider exists
-    let authProvider = null;
-    if (user) {
-      authProvider = await AuthProvider.findOne({
-        where: {
-          user_id: user.user_id,
-          provider: 'GOOGLE',
-          provider_uid: googleUser.googleId
-        }
+    let user = existingProvider?.user || null;
+
+    // 2) Nếu chưa có provider, tiếp tục flow tìm user theo email
+    if (!user) {
+      user = await User.findOne({
+        where: { email: googleUser.email },
+        include: [
+          {
+            model: Role,
+            as: 'roles',
+            through: { attributes: [] },
+          },
+        ],
       });
     }
 
-    // If user exists but no Google auth provider, create one
-    if (user && !authProvider) {
+    // 3) Nếu user đã có nhưng chưa có auth provider cho Google ID này, tạo mới
+    if (user && !existingProvider) {
       await AuthProvider.create({
         user_id: user.user_id,
         provider: 'GOOGLE',
-        provider_uid: googleUser.googleId
+        provider_uid: googleUser.googleId,
       });
     }
 
-    // If user doesn't exist, create new user
+    // 4) Nếu chưa có user, tạo mới cùng provider + role mặc định
     if (!user) {
-      // Extract name
-      const fullName = googleUser.name || `${googleUser.givenName || ''} ${googleUser.familyName || ''}`.trim() || 'Google User';
+      const fullName =
+        googleUser.name ||
+        `${googleUser.givenName || ''} ${googleUser.familyName || ''}`.trim() ||
+        'Google User';
 
       user = await User.create({
         email: googleUser.email,
         password_hash: null, // No password for Google users
         full_name: fullName,
-        status: 'ACTIVE'
+        status: 'ACTIVE',
       });
 
-      // Create Google auth provider
       await AuthProvider.create({
         user_id: user.user_id,
         provider: 'GOOGLE',
-        provider_uid: googleUser.googleId
+        provider_uid: googleUser.googleId,
       });
 
-      // Assign STUDENT role by default
       const studentRole = await Role.findOne({ where: { code: 'STUDENT' } });
       if (studentRole) {
         await user.addRole(studentRole);
         await Student.create({
           user_id: user.user_id,
-          student_code: `STU${user.user_id}`
+          student_code: `STU${user.user_id}`,
         });
       }
 
       // Reload user with roles
       user = await User.findByPk(user.user_id, {
-        include: [{
-          model: Role,
-          as: 'roles',
-          through: { attributes: [] }
-        }]
+        include: [
+          {
+            model: Role,
+            as: 'roles',
+            through: { attributes: [] },
+          },
+        ],
       });
     }
 
     if (user.status !== 'ACTIVE') {
       return res.status(403).json({
         success: false,
-        message: 'Account is not active'
+        message: 'Account is not active',
       });
     }
 
@@ -225,14 +244,14 @@ const googleLogin = async (req, res) => {
         user_id: user.user_id,
         email: user.email,
         full_name: user.full_name,
-        roles: user.roles.map(r => r.code)
-      }
+        roles: user.roles.map(r => r.code),
+      },
     });
   } catch (error) {
     console.error('Google login error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Internal server error'
+      message: error.message || 'Internal server error',
     });
   }
 };
@@ -240,6 +259,5 @@ const googleLogin = async (req, res) => {
 module.exports = {
   login,
   register,
-  googleLogin
+  googleLogin,
 };
-
