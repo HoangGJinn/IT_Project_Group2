@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   getGPSLocation,
+  getFilteredLocation,
   getIPLocation,
   geocodeAddress,
   validateCoordinates,
@@ -27,12 +28,28 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
     setError('');
 
     try {
-      // Try GPS first
+      // Try GPS first with filtered location (multiple samples + outlier removal)
       try {
-        const gpsLoc = await getGPSLocation();
+        const gpsLoc = await getFilteredLocation({
+          samples: 5,
+          intervalMs: 1500,
+          maxDurationMs: 10000,
+          outlierThreshold: 50, // meters from median to drop outliers
+        });
         setLocation({ latitude: gpsLoc.latitude, longitude: gpsLoc.longitude });
-        setLocationInfo({ ...gpsLoc, method: 'GPS' });
+        setLocationInfo({
+          ...gpsLoc,
+          method: 'GPS (Đã lọc)',
+          accuracy: gpsLoc.accuracy,
+        });
         setMethod('gps');
+
+        // Warn if accuracy is too low for 30m distance requirement
+        if (gpsLoc.accuracy > 30) {
+          setError(
+            `⚠️ Độ chính xác GPS: ${Math.round(gpsLoc.accuracy)}m (khuyến nghị ≤30m). Vị trí có thể không chính xác cho tính khoảng cách.`
+          );
+        }
         setLoading(false);
         return;
       } catch (gpsError) {
@@ -62,15 +79,38 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
     }
   };
 
-  const handleGPS = async () => {
+  const handleGPS = async (useMoreSamples = false) => {
     setLoading(true);
     setError('');
     setMethod('gps');
 
     try {
-      const gpsLoc = await getGPSLocation();
+      // Use more samples if accuracy was poor previously
+      const numSamples = useMoreSamples ? 10 : 5;
+      const maxDuration = useMoreSamples ? 15000 : 10000;
+
+      // Use filtered location with multiple samples and outlier removal
+      const gpsLoc = await getFilteredLocation({
+        samples: numSamples,
+        intervalMs: 1500,
+        maxDurationMs: maxDuration,
+        outlierThreshold: 50, // meters from median to drop outliers
+      });
       setLocation({ latitude: gpsLoc.latitude, longitude: gpsLoc.longitude });
-      setLocationInfo({ ...gpsLoc, method: 'GPS' });
+      setLocationInfo({
+        ...gpsLoc,
+        method: useMoreSamples ? 'GPS (Đã lọc - Nhiều mẫu)' : 'GPS (Đã lọc)',
+        accuracy: gpsLoc.accuracy,
+      });
+
+      // Warn if accuracy is still too low
+      if (gpsLoc.accuracy > 30) {
+        setError(
+          `⚠️ Độ chính xác GPS: ${Math.round(gpsLoc.accuracy)}m (khuyến nghị ≤30m). Vị trí có thể không chính xác cho tính khoảng cách.`
+        );
+      } else {
+        setError(''); // Clear error if accuracy is good now
+      }
     } catch (error) {
       setError(
         'Không thể lấy vị trí GPS. Vui lòng kiểm tra quyền truy cập vị trí hoặc thử phương thức khác.'
@@ -78,6 +118,11 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetryGPS = async () => {
+    // Retry with more samples for better accuracy
+    await handleGPS(true);
   };
 
   const handleIP = async () => {
@@ -282,21 +327,91 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
 
         {/* Current Location Display */}
         {location.latitude && location.longitude && (
-          <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+          <div
+            className={`mb-4 p-4 rounded-lg border ${
+              locationInfo?.accuracy && locationInfo.accuracy > 30
+                ? 'bg-yellow-50 border-yellow-300'
+                : 'bg-green-50 border-green-200'
+            }`}
+          >
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-green-800">Vị trí đã chọn:</span>
+              <span
+                className={`font-semibold ${
+                  locationInfo?.accuracy && locationInfo.accuracy > 30
+                    ? 'text-yellow-800'
+                    : 'text-green-800'
+                }`}
+              >
+                Vị trí đã chọn:
+              </span>
               {locationInfo?.method && (
-                <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">
+                <span
+                  className={`text-xs px-2 py-1 rounded ${
+                    locationInfo?.accuracy && locationInfo.accuracy > 30
+                      ? 'bg-yellow-200 text-yellow-800'
+                      : 'bg-green-200 text-green-800'
+                  }`}
+                >
                   {locationInfo.method}
                 </span>
               )}
             </div>
-            <div className="text-sm text-green-700 space-y-1">
+            <div
+              className={`text-sm space-y-2 ${
+                locationInfo?.accuracy && locationInfo.accuracy > 30
+                  ? 'text-yellow-700'
+                  : 'text-green-700'
+              }`}
+            >
               <p>
                 <span className="font-medium">Tọa độ:</span>{' '}
                 {parseFloat(location.latitude).toFixed(6)},{' '}
                 {parseFloat(location.longitude).toFixed(6)}
               </p>
+              {locationInfo?.accuracy !== undefined && (
+                <div>
+                  <p className="mb-1">
+                    <span className="font-medium">Độ chính xác:</span>{' '}
+                    {Math.round(locationInfo.accuracy)}m
+                    {locationInfo.accuracy <= 30 && (
+                      <span className="ml-2 text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded">
+                        ✅ Tốt
+                      </span>
+                    )}
+                    {locationInfo.accuracy > 30 && locationInfo.accuracy <= 50 && (
+                      <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
+                        ⚠️ Chấp nhận được
+                      </span>
+                    )}
+                    {locationInfo.accuracy > 50 && (
+                      <span className="ml-2 text-xs bg-red-200 text-red-800 px-2 py-0.5 rounded">
+                        ❌ Kém
+                      </span>
+                    )}
+                  </p>
+                  {locationInfo.accuracy > 30 && method === 'gps' && (
+                    <div className="mt-2 p-3 bg-white rounded border border-yellow-300">
+                      <p className="text-xs font-semibold text-yellow-800 mb-2">
+                        💡 Để cải thiện độ chính xác GPS:
+                      </p>
+                      <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                        <li>Di chuyển ra ngoài trời, tránh xa các tòa nhà cao</li>
+                        <li>Bật WiFi và Bluetooth (giúp định vị tốt hơn)</li>
+                        <li>Đợi vài giây để GPS ổn định</li>
+                        <li>Tránh các khu vực có nhiều vật cản (tường, mái che)</li>
+                      </ul>
+                      <button
+                        onClick={handleRetryGPS}
+                        disabled={loading}
+                        className="mt-2 px-4 py-2 bg-yellow-600 text-white text-xs font-semibold rounded-lg hover:bg-yellow-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        🔄 Đo lại GPS với nhiều mẫu hơn
+                        {loading && <span className="animate-spin">⏳</span>}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {locationInfo?.displayName && (
                 <p>
                   <span className="font-medium">Địa chỉ:</span> {locationInfo.displayName}
@@ -314,17 +429,59 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
           </div>
         )}
 
-        {/* Error Message */}
+        {/* Error/Warning Message */}
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{error}</p>
+          <div
+            className={`mb-4 p-3 rounded-lg border ${
+              error.includes('⚠️') ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'
+            }`}
+          >
+            <p className={`text-sm ${error.includes('⚠️') ? 'text-yellow-800' : 'text-red-800'}`}>
+              {error}
+            </p>
+            {error.includes('⚠️') && method === 'gps' && !loading && (
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={handleRetryGPS}
+                  className="px-4 py-2 bg-yellow-600 text-white text-sm font-semibold rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"
+                >
+                  🔄 Đo lại GPS
+                </button>
+                <button
+                  onClick={() => setError('')}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition"
+                >
+                  Tiếp tục với độ chính xác này
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Loading Indicator */}
         {loading && (
           <div className="mb-4 text-center">
-            <p className="text-gray-600">Đang lấy vị trí...</p>
+            <p className="text-gray-600">
+              {method === 'gps'
+                ? 'Đang lấy nhiều mẫu GPS để tăng độ chính xác... (5-15 giây)'
+                : 'Đang lấy vị trí...'}
+            </p>
+            {method === 'gps' && (
+              <div className="mt-2">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className="bg-blue-600 h-2.5 rounded-full animate-pulse"
+                    style={{ width: '60%' }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Đang lấy và lọc các điểm GPS để loại bỏ sai số...
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  💡 Hãy đợi để GPS ổn định, không di chuyển thiết bị
+                </p>
+              </div>
+            )}
           </div>
         )}
 

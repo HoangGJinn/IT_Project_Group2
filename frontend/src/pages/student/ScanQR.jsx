@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../utils/api';
+import { getFilteredLocation } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
 import { FaQrcode, FaCamera, FaKeyboard, FaTimesCircle, FaCheckCircle } from 'react-icons/fa';
 
@@ -219,30 +220,28 @@ function ScanQR() {
       let gpsAvailable = false;
 
       try {
-        if (navigator.geolocation) {
-          const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 0,
-            });
-          });
+        const filteredLocation = await getFilteredLocation({
+          samples: 5,
+          intervalMs: 1500,
+          maxDurationMs: 10000,
+          outlierThreshold: 50, // meters from median to drop outliers
+        });
 
-          latitude = position.coords.latitude;
-          longitude = position.coords.longitude;
-          locationAccuracy = position.coords.accuracy;
-          gpsAvailable = true;
+        latitude = filteredLocation.latitude;
+        longitude = filteredLocation.longitude;
+        locationAccuracy = filteredLocation.accuracy;
+        gpsAvailable = true;
 
-          // Check if accuracy is too low
-          if (locationAccuracy > 500) {
-            const useLowAccuracy = window.confirm(
-              `Cảnh báo: Độ chính xác vị trí thấp (${Math.round(locationAccuracy)}m). Điểm danh có thể thất bại nếu bạn không ở gần giáo viên.\n\nBạn có muốn tiếp tục với GPS này không?`
-            );
-            if (!useLowAccuracy) {
-              gpsAvailable = false;
-              latitude = null;
-              longitude = null;
-            }
+        // For this project we only care about distances <= 30m,
+        // so require a reasonably tight accuracy. Let user decide if worse.
+        if (locationAccuracy > 30) {
+          const useLowAccuracy = window.confirm(
+            `Độ chính xác GPS hiện là ${Math.round(locationAccuracy)}m (muốn ≤ 30m để tính khoảng cách tin cậy). Bạn có muốn tiếp tục với kết quả này không?`
+          );
+          if (!useLowAccuracy) {
+            gpsAvailable = false;
+            latitude = null;
+            longitude = null;
           }
         }
       } catch (geoError) {
