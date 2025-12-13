@@ -30,4 +30,7 @@ router.post(
   sessionController.startAttendance
 );
 
+// Endpoint để tự động xử lý các session đã kết thúc (có thể gọi từ cron job)
+router.post('/auto-finish', sessionController.autoFinish);
+
 module.exports = router;

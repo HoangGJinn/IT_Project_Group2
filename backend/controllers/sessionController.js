@@ -1,8 +1,12 @@
 const { Session, SessionMaterial, AttendanceSession, QRToken } = require('../models');
+const { autoFinishSessions } = require('../utils/sessionAutoFinish');
 
 const getSessions = async (req, res) => {
   try {
     const { classId } = req.params;
+
+    // Tự động xử lý các session đã kết thúc trước khi lấy danh sách
+    await autoFinishSessions();
 
     const sessions = await Session.findAll({
       where: { class_id: classId },
@@ -35,37 +39,48 @@ const getSessions = async (req, res) => {
         const sessionData = session.toJSON();
 
         // Calculate real-time status based on current time
-        const sessionDate = new Date(sessionData.date);
+        // Parse date string (format: YYYY-MM-DD) và time string (format: HH:mm:ss)
+        const sessionDateStr =
+          sessionData.date instanceof Date
+            ? sessionData.date.toISOString().split('T')[0]
+            : sessionData.date;
+        const [year, month, day] = sessionDateStr.split('-').map(Number);
+
         const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
-        const sessionStartTime = new Date(sessionDate);
-        sessionStartTime.setHours(startHour, startMinute, 0, 0);
+        const sessionStartTime = new Date(
+          Date.UTC(year, month - 1, day, startHour, startMinute, 0, 0)
+        );
 
         // Calculate end time
         let sessionEndTime = null;
         if (sessionData.end_time) {
           const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
-          sessionEndTime = new Date(sessionDate);
-          sessionEndTime.setHours(endHour, endMinute, 0, 0);
+          sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0, 0));
         } else {
           // Default to 90 minutes if no end_time
           sessionEndTime = new Date(sessionStartTime);
-          sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
-        }
-
-        // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
-        if (sessionData.status === 'ONGOING' && sessionEndTime && now >= sessionEndTime) {
-          await session.update({ status: 'FINISHED' });
-          sessionData.status = 'FINISHED';
+          sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
         }
 
         // Determine real-time status
+        // Sử dụng UTC để so sánh
+        const nowUTC = new Date();
+
+        // Tự động chuyển sang FINISHED nếu đã hết thời gian và status là ONGOING
+        if (sessionData.status === 'ONGOING' && sessionEndTime && nowUTC >= sessionEndTime) {
+          await session.update({ status: 'FINISHED' });
+          sessionData.status = 'FINISHED';
+        }
+        const startTimeUTC = new Date(sessionStartTime.toISOString());
+        const endTimeUTC = sessionEndTime ? new Date(sessionEndTime.toISOString()) : null;
+
         let realTimeStatus = sessionData.status;
         if (sessionData.status !== 'CANCELLED') {
-          if (now < sessionStartTime) {
+          if (nowUTC < startTimeUTC) {
             realTimeStatus = 'UPCOMING'; // Chưa đến giờ
-          } else if (now >= sessionStartTime && (!sessionEndTime || now < sessionEndTime)) {
+          } else if (nowUTC >= startTimeUTC && (!endTimeUTC || nowUTC < endTimeUTC)) {
             realTimeStatus = 'ONGOING'; // Đang diễn ra
-          } else if (sessionEndTime && now >= sessionEndTime) {
+          } else if (endTimeUTC && nowUTC >= endTimeUTC) {
             realTimeStatus = 'FINISHED'; // Đã kết thúc
           }
         }
@@ -449,23 +464,32 @@ const startAttendance = async (req, res) => {
       });
     }
 
+    // Tự động xử lý các session đã kết thúc
+    await autoFinishSessions();
+
     // Check if session has ended
     const now = new Date();
-    const sessionDate = new Date(session.date);
+    // Parse date string (format: YYYY-MM-DD) và time string (format: HH:mm:ss)
+    const sessionDateStr =
+      session.date instanceof Date ? session.date.toISOString().split('T')[0] : session.date;
+    const [year, month, day] = sessionDateStr.split('-').map(Number);
+
     let sessionEndTime = null;
     if (session.end_time) {
       const [endHour, endMinute] = session.end_time.split(':').map(Number);
-      sessionEndTime = new Date(sessionDate);
-      sessionEndTime.setHours(endHour, endMinute, 0, 0);
+      sessionEndTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 0, 0));
     } else {
       const [startHour, startMinute] = session.start_time.split(':').map(Number);
-      const sessionStartTime = new Date(sessionDate);
-      sessionStartTime.setHours(startHour, startMinute, 0, 0);
+      const sessionStartTime = new Date(
+        Date.UTC(year, month - 1, day, startHour, startMinute, 0, 0)
+      );
       sessionEndTime = new Date(sessionStartTime);
-      sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+      sessionEndTime.setUTCMinutes(sessionEndTime.getUTCMinutes() + 90);
     }
 
-    if (sessionEndTime && now >= sessionEndTime) {
+    // Sử dụng UTC để so sánh
+    const nowUTC = new Date();
+    if (sessionEndTime && nowUTC >= sessionEndTime) {
       // Tự động chuyển sang FINISHED
       await session.update({ status: 'FINISHED' });
       return res.status(400).json({
@@ -633,6 +657,23 @@ const deleteSession = async (req, res) => {
   }
 };
 
+const autoFinish = async (req, res) => {
+  try {
+    const result = await autoFinishSessions();
+    res.json({
+      success: true,
+      message: 'Auto finish sessions completed',
+      data: result,
+    });
+  } catch (error) {
+    console.error('Auto finish error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+    });
+  }
+};
+
 module.exports = {
   getSessions,
   createSession,
@@ -640,4 +681,5 @@ module.exports = {
   startSession,
   startAttendance,
   deleteSession,
+  autoFinish,
 };
