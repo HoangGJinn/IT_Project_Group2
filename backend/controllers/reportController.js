@@ -191,15 +191,24 @@ const getAttendanceReport = async (req, res) => {
     });
 
     const students = Array.from(studentMap.values()).map(s => {
-      const attended = s.onTime + s.late;
-      // Ensure absent count is never negative
-      const absentCount = Math.max(0, s.total - attended);
+      const attended = Number(s.onTime) + Number(s.late);
+      const total = Number(s.total) || 0;
+      // Ensure absent count is never negative and is a valid number
+      const absentCount = Math.max(0, Math.floor(total - attended));
+
+      // Additional safety check: if attended > total, log warning and set absent to 0
+      if (attended > total) {
+        console.warn(
+          `Attendance count mismatch for student ${s.student_id}: attended=${attended}, total=${total}`
+        );
+      }
+
       return {
         student_id: s.student_id,
         student_code: s.student_code,
         full_name: s.full_name,
-        total_sessions: s.total,
-        attendance_rate: s.total > 0 ? ((attended / s.total) * 100).toFixed(1) + '%' : '0%',
+        total_sessions: total,
+        attendance_rate: total > 0 ? ((attended / total) * 100).toFixed(1) + '%' : '0%',
         valid_count: s.valid,
         invalid_count: s.invalid,
         pending_count: s.pending,
@@ -401,12 +410,29 @@ const getClassReport = async (req, res) => {
 
     // Count attendance records from FINISHED sessions only
     // (to match the total sessions count which only includes FINISHED sessions)
+    // Use Set to track unique session-student pairs to avoid double counting
+    const countedRecords = new Set();
     records.forEach(record => {
       const studentId = record.student_id;
       // Only count PRESENT and LATE records from FINISHED sessions
       if (record.status !== 'PRESENT' && record.status !== 'LATE') {
         return;
       }
+
+      // Create unique key to prevent double counting
+      const sessionId = record.attendanceSession?.session?.session_id;
+      if (!sessionId) {
+        return; // Skip if session info is missing
+      }
+      const recordKey = `${studentId}-${sessionId}`;
+      if (countedRecords.has(recordKey)) {
+        // Already counted this student-session pair, skip to avoid duplicates
+        console.warn(
+          `Duplicate attendance record detected: student ${studentId}, session ${sessionId}`
+        );
+        return;
+      }
+      countedRecords.add(recordKey);
 
       if (!studentMap.has(studentId)) {
         studentMap.set(studentId, {
@@ -438,19 +464,27 @@ const getClassReport = async (req, res) => {
     });
 
     const students = Array.from(studentMap.values()).map(s => {
-      const attended = s.onTime + s.late;
+      const attended = Number(s.onTime) + Number(s.late);
+      const total = Number(s.total) || 0;
       // Absent = total sessions (FINISHED only) - attended sessions (FINISHED only)
-      // Ensure absent count is never negative
-      const absentCount = Math.max(0, s.total - attended);
+      // Ensure absent count is never negative and is a valid number
+      const absentCount = Math.max(0, Math.floor(total - attended));
+
+      // Additional safety check: if attended > total, log warning and set absent to 0
+      if (attended > total) {
+        console.warn(
+          `Attendance count mismatch for student ${s.student_id}: attended=${attended}, total=${total}`
+        );
+      }
       return {
         student_id: s.student_id,
         student_code: s.student_code,
         full_name: s.full_name,
-        total_sessions: s.total,
+        total_sessions: total,
         on_time: s.onTime,
         late: s.late,
         absent: absentCount,
-        attendance_rate: s.total > 0 ? ((attended / s.total) * 100).toFixed(1) + '%' : '0%',
+        attendance_rate: total > 0 ? ((attended / total) * 100).toFixed(1) + '%' : '0%',
         valid_count: s.valid,
         invalid_count: s.invalid,
         pending_count: s.pending,
