@@ -1,4 +1,9 @@
 require('dotenv').config();
+
+// Set timezone to Vietnam (UTC+7) for consistent time handling
+// This ensures session time calculations work correctly on Railway (UTC) servers
+process.env.TZ = 'Asia/Ho_Chi_Minh';
+
 const app = require('./app');
 const { sequelize } = require('./models');
 const { startSessionScheduler } = require('./services/sessionScheduler');
