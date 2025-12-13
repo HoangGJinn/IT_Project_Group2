@@ -1,6 +1,7 @@
 require('dotenv').config();
 const app = require('./app');
 const { sequelize } = require('./models');
+const { startSessionScheduler } = require('./services/sessionScheduler');
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -37,6 +38,10 @@ sequelize
         console.log(`📍 API Local: http://localhost:${PORT}/api`);
         console.log(`\n💡 Tip: Sử dụng ngrok để truy cập từ điện thoại (xem NGROK_SETUP.md)`);
       }
+
+      // Khởi động scheduler để tự động cập nhật session status
+      // Chạy mỗi 1 phút để đảm bảo session được cập nhật kịp thời
+      startSessionScheduler(1);
     });
   })
   .catch(error => {
