@@ -492,4 +492,3 @@ ON DUPLICATE KEY UPDATE status=VALUES(status);
 
 -- ===== HOÀN TẤT =====
 SELECT 'Database đã được tạo thành công với đầy đủ các bảng, indexes và dữ liệu mẫu!' AS status;
-
