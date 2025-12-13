@@ -27,16 +27,47 @@ const getAttendanceReport = async (req, res) => {
     const classes = await Class.findAll({ where });
     const classIds = classes.map(c => c.class_id);
 
-    // Get all FINISHED sessions for these classes (to match getClassReport logic)
-    let sessions = [];
+    // Get all sessions for these classes and calculate real-time finished status
+    // This handles timezone differences between server and client
+    let allSessions = [];
     if (classIds.length > 0) {
-      sessions = await Session.findAll({
+      allSessions = await Session.findAll({
         where: {
           class_id: { [Op.in]: classIds },
-          status: 'FINISHED',
+          status: { [Op.in]: ['FINISHED', 'ONGOING', 'CANCELLED'] },
         },
       });
     }
+
+    // Calculate real-time finished sessions based on actual time (not just DB status)
+    const now = new Date();
+    const sessions = allSessions.filter(s => {
+      // Skip cancelled sessions
+      if (s.status === 'CANCELLED') {
+        return false;
+      }
+
+      const sessionData = s.toJSON();
+      const sessionDate = new Date(sessionData.date);
+
+      // Calculate session end time
+      let sessionEndTime = null;
+      if (sessionData.end_time) {
+        const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
+        sessionEndTime = new Date(sessionDate);
+        sessionEndTime.setHours(endHour, endMinute, 0, 0);
+      } else {
+        // Default to 90 minutes if no end_time
+        const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
+        const sessionStartTime = new Date(sessionDate);
+        sessionStartTime.setHours(startHour, startMinute, 0, 0);
+        sessionEndTime = new Date(sessionStartTime);
+        sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+      }
+
+      // Session is finished if current time is past end time
+      return sessionEndTime && now >= sessionEndTime;
+    });
 
     // Calculate total finished sessions per class
     const classSessionCount = new Map();
@@ -274,19 +305,48 @@ const getClassReport = async (req, res) => {
       });
     }
 
-    // Get all sessions for this class (both FINISHED and ONGOING)
-    // We need ONGOING to get attendance records, but total sessions should only count FINISHED
+    // Get all sessions for this class (including CANCELLED to filter them out)
+    // Calculate real-time status based on current time to handle timezone differences
     const allSessions = await Session.findAll({
       where: {
         class_id: classId,
-        status: { [Op.in]: ['FINISHED', 'ONGOING'] },
+        status: { [Op.in]: ['FINISHED', 'ONGOING', 'CANCELLED'] },
       },
       order: [['date', 'ASC']],
     });
 
-    // Only FINISHED sessions count for total sessions (to match student view)
-    const finishedSessions = allSessions.filter(s => s.status === 'FINISHED');
+    // Calculate real-time finished sessions based on actual time (not just DB status)
+    // This handles timezone differences between server and client
+    const now = new Date();
+    const finishedSessions = allSessions.filter(s => {
+      // Skip cancelled sessions
+      if (s.status === 'CANCELLED') {
+        return false;
+      }
+
+      const sessionData = s.toJSON();
+      const sessionDate = new Date(sessionData.date);
+
+      // Calculate session end time
+      let sessionEndTime = null;
+      if (sessionData.end_time) {
+        const [endHour, endMinute] = sessionData.end_time.split(':').map(Number);
+        sessionEndTime = new Date(sessionDate);
+        sessionEndTime.setHours(endHour, endMinute, 0, 0);
+      } else {
+        // Default to 90 minutes if no end_time
+        const [startHour, startMinute] = sessionData.start_time.split(':').map(Number);
+        const sessionStartTime = new Date(sessionDate);
+        sessionStartTime.setHours(startHour, startMinute, 0, 0);
+        sessionEndTime = new Date(sessionStartTime);
+        sessionEndTime.setMinutes(sessionEndTime.getMinutes() + 90);
+      }
+
+      // Session is finished if current time is past end time
+      return sessionEndTime && now >= sessionEndTime;
+    });
     const totalFinishedSessions = finishedSessions.length;
+    const finishedSessionIds = new Set(finishedSessions.map(s => s.session_id));
 
     const sessionIds = allSessions.map(s => s.session_id);
 
@@ -327,7 +387,7 @@ const getClassReport = async (req, res) => {
               {
                 model: Session,
                 as: 'session',
-                attributes: ['session_id', 'date', 'status'],
+                attributes: ['session_id', 'date', 'start_time', 'end_time', 'status'],
               },
             ],
           },
@@ -336,11 +396,21 @@ const getClassReport = async (req, res) => {
     }
 
     // Filter records to only include FINISHED sessions for statistics
-    // Only FINISHED sessions should be counted in the report to match the total sessions count
+    // Use real-time calculation to match the total sessions count (handles timezone differences)
     const records = allRecords.filter(r => {
-      const sessionStatus = r.attendanceSession?.session?.status;
-      // Only include FINISHED sessions for report statistics
-      return sessionStatus === 'FINISHED';
+      const session = r.attendanceSession?.session;
+      if (!session) {
+        return false;
+      }
+
+      // Skip cancelled sessions
+      if (session.status === 'CANCELLED') {
+        return false;
+      }
+
+      // Check if session is actually finished based on real-time calculation
+      const sessionId = session.session_id;
+      return finishedSessionIds.has(sessionId);
     });
 
     // Get all enrolled students
