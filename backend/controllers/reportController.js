@@ -38,6 +38,13 @@ const getAttendanceReport = async (req, res) => {
       });
     }
 
+    // Calculate total finished sessions per class
+    const classSessionCount = new Map();
+    sessions.forEach(session => {
+      const classId = session.class_id;
+      classSessionCount.set(classId, (classSessionCount.get(classId) || 0) + 1);
+    });
+
     const totalFinishedSessions = sessions.length;
     const sessionIds = sessions.map(s => s.session_id);
 
@@ -93,11 +100,14 @@ const getAttendanceReport = async (req, res) => {
       ],
     });
 
-    // Calculate total sessions per student (only FINISHED sessions, to match getClassReport)
+    // Calculate total sessions per student based on their class (only FINISHED sessions)
     const studentTotalSessions = new Map();
     enrollments.forEach(enrollment => {
       const studentId = enrollment.student_id;
-      studentTotalSessions.set(studentId, totalFinishedSessions);
+      const classId = enrollment.class_id;
+      // Get the number of finished sessions for this student's class
+      const classSessions = classSessionCount.get(classId) || 0;
+      studentTotalSessions.set(studentId, classSessions);
     });
 
     // Filter only PRESENT and LATE records (to match getClassReport logic)
@@ -106,9 +116,18 @@ const getAttendanceReport = async (req, res) => {
     const onTime = attendanceRecords.filter(r => r.status === 'PRESENT').length;
     const late = attendanceRecords.filter(r => r.status === 'LATE').length;
 
-    // Calculate absent: totalPossibleAttendances - totalAttended (to match getClassReport)
-    const totalStudents = enrollments.length;
-    const totalPossibleAttendances = totalFinishedSessions * totalStudents;
+    // Calculate absent: totalPossibleAttendances - totalAttended
+    // Total possible attendances = sum of (finished sessions per class * students in that class)
+    let totalPossibleAttendances = 0;
+    const classStudentCount = new Map();
+    enrollments.forEach(enrollment => {
+      const classId = enrollment.class_id;
+      classStudentCount.set(classId, (classStudentCount.get(classId) || 0) + 1);
+    });
+    classStudentCount.forEach((studentCount, classId) => {
+      const classSessions = classSessionCount.get(classId) || 0;
+      totalPossibleAttendances += classSessions * studentCount;
+    });
     const totalAttended = onTime + late;
     const absent = Math.max(0, totalPossibleAttendances - totalAttended);
 
@@ -173,7 +192,8 @@ const getAttendanceReport = async (req, res) => {
 
     const students = Array.from(studentMap.values()).map(s => {
       const attended = s.onTime + s.late;
-      const absentCount = s.total - attended;
+      // Ensure absent count is never negative
+      const absentCount = Math.max(0, s.total - attended);
       return {
         student_id: s.student_id,
         student_code: s.student_code,
@@ -307,11 +327,11 @@ const getClassReport = async (req, res) => {
     }
 
     // Filter records to only include FINISHED sessions for statistics
-    // (ONGOING sessions with attendance are included, but only FINISHED count toward total)
+    // Only FINISHED sessions should be counted in the report to match the total sessions count
     const records = allRecords.filter(r => {
       const sessionStatus = r.attendanceSession?.session?.status;
-      // Include FINISHED sessions and ONGOING sessions (for students who already checked in)
-      return sessionStatus === 'FINISHED' || sessionStatus === 'ONGOING';
+      // Only include FINISHED sessions for report statistics
+      return sessionStatus === 'FINISHED';
     });
 
     // Get all enrolled students
@@ -340,8 +360,8 @@ const getClassReport = async (req, res) => {
       studentTotalSessions.set(studentId, totalFinishedSessions);
     });
 
-    // Calculate overview - count attendance from both FINISHED and ONGOING sessions
-    // (to match student view which counts all attendance records, but total only counts FINISHED)
+    // Calculate overview - count attendance from FINISHED sessions only
+    // (to match the total sessions count which only includes FINISHED sessions)
     const allAttendanceRecords = records.filter(r => r.status === 'PRESENT' || r.status === 'LATE');
     const totalRecords = allAttendanceRecords.length;
     const onTime = allAttendanceRecords.filter(r => r.status === 'PRESENT').length;
@@ -379,11 +399,11 @@ const getClassReport = async (req, res) => {
       }
     });
 
-    // Count attendance records from both FINISHED and ONGOING sessions
-    // (to match student view which counts all attendance records)
+    // Count attendance records from FINISHED sessions only
+    // (to match the total sessions count which only includes FINISHED sessions)
     records.forEach(record => {
       const studentId = record.student_id;
-      // Only count PRESENT and LATE records (to match student view)
+      // Only count PRESENT and LATE records from FINISHED sessions
       if (record.status !== 'PRESENT' && record.status !== 'LATE') {
         return;
       }
@@ -419,8 +439,9 @@ const getClassReport = async (req, res) => {
 
     const students = Array.from(studentMap.values()).map(s => {
       const attended = s.onTime + s.late;
-      // Absent = total sessions - attended sessions
-      const absentCount = s.total - attended;
+      // Absent = total sessions (FINISHED only) - attended sessions (FINISHED only)
+      // Ensure absent count is never negative
+      const absentCount = Math.max(0, s.total - attended);
       return {
         student_id: s.student_id,
         student_code: s.student_code,
