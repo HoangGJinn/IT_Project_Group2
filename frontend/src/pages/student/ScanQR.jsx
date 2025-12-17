@@ -4,13 +4,23 @@ import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../utils/api';
 import { getFilteredLocation } from '../../utils/location';
 import LocationPicker from '../../components/LocationPicker';
-import { FaQrcode, FaCamera, FaKeyboard, FaTimesCircle, FaCheckCircle } from 'react-icons/fa';
+import {
+  FaQrcode,
+  FaCamera,
+  FaKeyboard,
+  FaTimesCircle,
+  FaCheckCircle,
+  FaSync,
+} from 'react-icons/fa';
 
 function ScanQR() {
   const [searchParams] = useSearchParams();
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
+  const [cameras, setCameras] = useState([]);
+  const [currentCameraId, setCurrentCameraId] = useState(null);
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   // Note: We don't auto-process token from URL anymore
   // User must manually start scanning or enter code
@@ -99,15 +109,34 @@ function ScanQR() {
 
       // Get available cameras
       let cameraId = null;
+      let availableCameras = [];
       try {
-        const cameras = await Html5Qrcode.getCameras();
-        if (cameras && cameras.length > 0) {
-          // Prefer back camera (environment facing)
-          const backCamera = cameras.find(
+        availableCameras = await Html5Qrcode.getCameras();
+        if (availableCameras && availableCameras.length > 0) {
+          setCameras(availableCameras);
+
+          // Tìm camera sau (back/rear) trước
+          const backCamera = availableCameras.find(
             cam =>
-              cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('rear')
+              cam.label.toLowerCase().includes('back') ||
+              cam.label.toLowerCase().includes('rear') ||
+              cam.label.toLowerCase().includes('environment')
           );
-          cameraId = backCamera ? backCamera.id : cameras[0].id;
+
+          // Nếu không tìm thấy camera sau, tìm camera trước (front/user)
+          const frontCamera = availableCameras.find(
+            cam =>
+              cam.label.toLowerCase().includes('front') || cam.label.toLowerCase().includes('user')
+          );
+
+          // Ưu tiên: back > front > camera đầu tiên
+          cameraId = backCamera
+            ? backCamera.id
+            : frontCamera
+              ? frontCamera.id
+              : availableCameras[0].id;
+
+          setCurrentCameraId(cameraId);
         }
       } catch (camError) {
         console.warn('Could not get camera list, using default:', camError);
@@ -177,6 +206,50 @@ function ScanQR() {
     setIsScanning(false);
     setScanResult(null);
     setError(null);
+    setCurrentCameraId(null);
+  };
+
+  const switchCamera = async () => {
+    if (!html5QrCodeRef.current || !isScanning || cameras.length < 2 || isSwitchingCamera) {
+      return;
+    }
+
+    try {
+      setIsSwitchingCamera(true);
+      setError(null);
+
+      // Tìm camera tiếp theo
+      const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
+      const nextIndex = (currentIndex + 1) % cameras.length;
+      const nextCameraId = cameras[nextIndex].id;
+
+      // Dừng camera hiện tại
+      await html5QrCodeRef.current.stop();
+
+      // Khởi động camera mới
+      await html5QrCodeRef.current.start(
+        { deviceId: { exact: nextCameraId } },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          disableFlip: false,
+        },
+        (decodedText, _decodedResult) => {
+          processQRCode(decodedText);
+        },
+        _errorMessage => {
+          // Ignore scanning errors
+        }
+      );
+
+      setCurrentCameraId(nextCameraId);
+    } catch (err) {
+      console.error('Error switching camera:', err);
+      setError('Không thể chuyển đổi camera. Vui lòng thử lại.');
+    } finally {
+      setIsSwitchingCamera(false);
+    }
   };
 
   const [manualInput, setManualInput] = useState('');
@@ -465,15 +538,40 @@ function ScanQR() {
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="border-4 border-blue-500 rounded-lg w-64 h-64"></div>
               </div>
+              {/* Camera switch button - only show if more than 1 camera */}
+              {cameras.length > 1 && (
+                <button
+                  onClick={switchCamera}
+                  disabled={isSwitchingCamera}
+                  className="absolute top-4 right-4 bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-3 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  title="Đổi camera"
+                >
+                  <FaSync className={`text-xl ${isSwitchingCamera ? 'animate-spin' : ''}`} />
+                </button>
+              )}
             </div>
             <div className="text-center">
               <p className="text-gray-600 mb-4">Đưa mã QR vào khung hình để quét</p>
-              <button
-                onClick={stopScanning}
-                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
-              >
-                Dừng Quét
-              </button>
+              <div className="flex gap-3 justify-center">
+                {cameras.length > 1 && (
+                  <button
+                    onClick={switchCamera}
+                    disabled={isSwitchingCamera}
+                    className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <FaSync className={isSwitchingCamera ? 'animate-spin' : ''} />
+                    Đổi Camera{' '}
+                    {cameras.length > 1 &&
+                      `(${cameras.findIndex(c => c.id === currentCameraId) + 1}/${cameras.length})`}
+                  </button>
+                )}
+                <button
+                  onClick={stopScanning}
+                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                >
+                  Dừng Quét
+                </button>
+              </div>
             </div>
           </div>
         )}
