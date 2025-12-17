@@ -31,9 +31,9 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
       // Try GPS first with filtered location (multiple samples + outlier removal)
       try {
         const gpsLoc = await getFilteredLocation({
-          samples: 5,
-          intervalMs: 1500,
-          maxDurationMs: 10000,
+          samples: 2,
+          intervalMs: 600,
+          maxDurationMs: 5000,
           outlierThreshold: 50, // meters from median to drop outliers
         });
         setLocation({ latitude: gpsLoc.latitude, longitude: gpsLoc.longitude });
@@ -86,13 +86,13 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
 
     try {
       // Use more samples if accuracy was poor previously
-      const numSamples = useMoreSamples ? 10 : 5;
-      const maxDuration = useMoreSamples ? 15000 : 10000;
+      const numSamples = useMoreSamples ? 5 : 2;
+      const maxDuration = useMoreSamples ? 8000 : 5000;
 
       // Use filtered location with multiple samples and outlier removal
       const gpsLoc = await getFilteredLocation({
         samples: numSamples,
-        intervalMs: 1500,
+        intervalMs: 600,
         maxDurationMs: maxDuration,
         outlierThreshold: 50, // meters from median to drop outliers
       });
@@ -462,9 +462,7 @@ function LocationPicker({ onLocationSelected, onCancel, initialLocation = null }
         {loading && (
           <div className="mb-4 text-center">
             <p className="text-gray-600">
-              {method === 'gps'
-                ? 'Đang lấy nhiều mẫu GPS để tăng độ chính xác... (5-15 giây)'
-                : 'Đang lấy vị trí...'}
+              {method === 'gps' ? 'Đang lấy vị trí GPS... (2-5 giây)' : 'Đang lấy vị trí...'}
             </p>
             {method === 'gps' && (
               <div className="mt-2">

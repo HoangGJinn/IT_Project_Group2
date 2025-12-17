@@ -26,7 +26,7 @@ export const getGPSLocation = () => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 5000,
         maximumAge: 0,
       }
     );
@@ -208,7 +208,7 @@ export const getFilteredLocation = async ({
         err => reject(err),
         {
           enableHighAccuracy: true,
-          timeout: 10000,
+          timeout: 5000,
           maximumAge: 0,
         }
       );

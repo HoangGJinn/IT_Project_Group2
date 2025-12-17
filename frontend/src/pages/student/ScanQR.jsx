@@ -221,9 +221,9 @@ function ScanQR() {
 
       try {
         const filteredLocation = await getFilteredLocation({
-          samples: 5,
-          intervalMs: 1500,
-          maxDurationMs: 10000,
+          samples: 2,
+          intervalMs: 600,
+          maxDurationMs: 5000,
           outlierThreshold: 50, // meters from median to drop outliers
         });
 
